@@ -10,16 +10,16 @@ This section outlines the build instructions though your mileage may vary depend
 
 The following dependencies must be satisified prior to building the code.
 
-    1.  A C++17 compliant compiler.
-    2.  [CMake](https://cmake.org/) version 3.10 or greater.
-    3.  [GTest](https://github.com/google/googletest) for unit testing.
-    4.  [Boost](https://www.boost.org/).
-    5.  [DAAL](https://software.seek.intel.com/performance-libraries) for the DBSCAN clustering algorithm.
-    6.  [MKL](https://software.seek.intel.com/performance-libraries) for a LAPACK/BLAS implementation.
+   1.  A C++17 compliant compiler.
+   2.  [CMake](https://cmake.org/) version 3.10 or greater.
+   3.  [GTest](https://github.com/google/googletest) for unit testing.
+   4.  [Boost](https://www.boost.org/).
+   5.  [DAAL](https://software.seek.intel.com/performance-libraries) for the DBSCAN clustering algorithm.
+   6.  [MKL](https://software.seek.intel.com/performance-libraries) for a LAPACK/BLAS implementation.
 
 Optional
     
-    1.  [TBB](https://software.seek.intel.com/performance-libraries) for a portable threading implementation.
+   1.  [TBB](https://software.seek.intel.com/performance-libraries) for a portable threading implementation.
 
 The build instructions are as follows:
 
