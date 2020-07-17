@@ -75,6 +75,7 @@ add_executable(tests
                testing/mesh.cpp
                testing/event.cpp
                testing/migrate.cpp
+               testing/dbscan.cpp
                testing/associator.cpp)
 target_link_libraries(tests PRIVATE massociate ${GTEST_BOTH_LIBRARIES})
 target_include_directories(tests PRIVATE ${GTEST_INCLUDE_DIRS})
