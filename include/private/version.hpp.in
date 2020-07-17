@@ -1,0 +1,51 @@
+#ifndef MASSOCIATE_VERSION_HPP
+#define MASSOCIATE_VERSION_HPP
+#include <string>
+#define MASSOCIATE_MAJOR @MAssociate_VERSION_MAJOR@
+#define MASSOCIATE_MINOR @MAssociate_VERSION_MINOR@
+#define MASSOCIATE_PATCH @MAssociate_VERSION_PATCH@
+#define MASSOCIATE_VERSION "@PROJECT_VERSION@"
+
+namespace MAssociate
+{
+/*!
+ * @class Version version.hpp "gphasemm/version.hpp"
+ * @brief Defines the MFLib version information.
+ * @copyright Ben Baker (University of Utah) distributed under the MIT license.
+ */
+class Version
+{
+public:
+    /*!
+     * @brief Returns the API major version number.
+     * @result The major version number.
+     */
+    static int getMajor() noexcept;
+    /*!
+     * @brief Returns the API minor version number.
+     * @result The minor version number.
+     */
+    static int getMinor() noexcept;
+    /*!
+     * @brief Returns the API patch version number.
+     * @result The patch version number.
+     */
+    static int getPatch() noexcept;
+    [[maybe_unused]] /*!
+     * @brief Returns the full version number as a string.
+     * @result The full version number, e.g., "1.2.3".
+     */
+    static std::string getVersion() noexcept;
+    [[maybe_unused]] /*!
+     * @brief Determines if the version is greater than or equal to
+     *        the current (major, minor, patch).
+     * @param[in] major  The major version number.
+     * @param[in] minor  The minor version number.
+     * @param[in] patch  The patch number.
+     * @result True indicates that the version is at least equal to the
+     *         given major, minor, patch.
+     */
+    static bool isAtLeast(int major, int minor, int patch) noexcept;
+};
+}
+#endif
