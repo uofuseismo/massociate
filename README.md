@@ -23,16 +23,16 @@ Optional
 
 The build instructions are as follows:
 
-   1.  Download the code:
+Download the code:
 
     git clone https://github.com/uofuseismo/massociate.git
 
 
-   2.  Descend into massociate
+Descend into massociate
 
     cd massociate
 
-   3.  Configure the software.  Typically I'll use a script such as
+Configure the software.  Typically I'll use a script to pass variables into CMake.  On OSX I might do
 
     #!/bin/bash
     export CXX=/usr/bin/clang++
@@ -52,9 +52,12 @@ The build instructions are as follows:
     -DDAAL_CORE_LIBRARY=${DAAL_ROOT}/lib/libdaal_core.dylib \
     -DDAAL_SEQUENTIAL_LIBRARY=${DAAL_ROOT}/lib/libdaal_sequential.dylib
 
-  4.  Following a successful configuration just type 
+Following a successful configuration just type 
 
     make
 
-  
+Install the softare (didn't try this one yet)
 
+    make install 
+
+Should you have permissions reissue then preface the above command with sudo.

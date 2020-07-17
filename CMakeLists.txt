@@ -86,6 +86,24 @@ set_target_properties(tests PROPERTIES
 add_test(NAME tests
          COMMAND tests)
 
+###############################################################################
+#                                 Installation                                #
+###############################################################################
+include(GNUInstallDirs)
+#if (MASSOCIATE_WRAP_PYTHON)
+#   install(TARGETS massociate pymassociate
+#           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+#           LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+#           ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+#           PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+#else()
+   install(TARGETS massociate
+           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+           LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+           ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+           PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+#endif()
+
 ##########################################################################################
 #                                     CPACK Packaging                                    #
 ##########################################################################################
