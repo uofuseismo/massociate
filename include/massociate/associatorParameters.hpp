@@ -159,6 +159,23 @@ public:
      */
     [[nodiscard]] double getPageRankDampingFactor() const noexcept;
     /*! @} */
+
+    /*!
+     * @brief This is a tuning parameter.  Ideally you want the number of 
+     *        tables times the tile size to fit into the processor's cache
+     *        size.  If this variable is too small then memory thrashing will
+     *        slow down program execution.  If this variable is too large then
+     *        cache misses will slow down program execution.
+     * @param[in] tileSize  The tile size.  This must be positive.
+     * @throws std::invalid_argument if tileSize is not positive.
+     * @note Internally this will be set to the minimum of the number of
+     *       points in the table and the specified tile size.
+     */
+    void setTileSize(int tileSize);
+    /*!
+     * @result The tile size.
+     */
+    [[nodiscard]] int getTileSize() const noexcept;
 private:
     class AssociatorParametersImpl;
     std::unique_ptr<AssociatorParametersImpl> pImpl;

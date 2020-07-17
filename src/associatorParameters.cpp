@@ -10,6 +10,7 @@ public:
     int mDBSCANMinClusterSize = 6;
     int mPageRankIterations = 20;
     int mTables =-1;
+    int mTileSize = 1024;
 };
 
 /// C'tor
@@ -63,6 +64,7 @@ void AssociatorParameters::clear() noexcept
     pImpl->mDBSCANMinClusterSize = 6;
     pImpl->mPageRankIterations = 20;
     pImpl->mTables =-1;
+    pImpl->mTileSize = 1024;
 }
 
 /// Sets/gets number of tables
@@ -164,4 +166,19 @@ void AssociatorParameters::setPageRankNumberOfIterations(
 int AssociatorParameters::getPageRankNumberOfIterations() const noexcept
 {
     return pImpl->mPageRankIterations;
+}
+
+/// Sets/gets the tile size
+void AssociatorParameters::setTileSize(const int tileSize)
+{
+    if (tileSize < 1)
+    {
+        throw std::invalid_argument("tileSize must be positive");
+    }
+    pImpl->mTileSize = tileSize;
+}
+
+int AssociatorParameters::getTileSize() const noexcept
+{
+    return pImpl->mTileSize;
 }
