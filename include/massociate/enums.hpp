@@ -29,6 +29,7 @@ enum class AnalyticCorrelationFunction
  */
 enum class Geometry
 {
+    UNKNOWN = 0,            /*! Unspecified geometry. */
     SPHERICAL_POINTS_3D,   /*!< 3D points in a spherical geometry,
                                 i.e., (latitude, longitude, depth). */
     CARTESIAN_POINTS_3D    /*!< 3D points in a Cartesian geometry,

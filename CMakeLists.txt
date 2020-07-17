@@ -1,3 +1,4 @@
+  
 cmake_minimum_required(VERSION 3.10)
 project(MAssociate VERSION 0.1.0 LANGUAGES CXX)
 enable_testing()
@@ -50,7 +51,8 @@ set(SRC
     src/pick.cpp
     src/version.cpp
     src/waveformIdentifier.cpp
-    src/mesh/spherical/points3d.cpp)
+    src/mesh/spherical/points3d.cpp
+    src/mesh/cartesian/points3d.cpp)
 
 #cmake -DBUILD_SHARED_LIBS=YES /path/to/source
 set(BUILD_SHARED_LIBS YES)
