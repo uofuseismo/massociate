@@ -190,6 +190,22 @@ public:
     [[nodiscard]] MAssociate::Polarity getPolarity() const noexcept;
     /*! @} */
 
+    /*! @name Static Correction
+     * @{
+     */
+    /*!
+     * @brief Sets the static currection such that the modeled pick time is
+     *        \f$ T_{modeled} = T_0 + T + T_s \f$ 
+     *        where \f$ T_0 \f$ is the origin time, \f$ T \f$ is the travel time
+     *        and \f$ T_s \f$ is the static correction.
+     * @param[in] correction   The static correction in seconds.
+     */ 
+    void setStaticCorrection(double correction) noexcept;
+    /*!
+     * @result The static correction in seconds.
+     */
+    [[nodiscard]] double getStaticCorrection() const noexcept;
+    /*! @} */
 private:
     class PickImpl;
     std::unique_ptr<PickImpl> pImpl;

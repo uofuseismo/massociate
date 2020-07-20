@@ -57,7 +57,7 @@ set(SRC
 #cmake -DBUILD_SHARED_LIBS=YES /path/to/source
 set(BUILD_SHARED_LIBS YES)
 add_library(massociate ${SRC})
-target_link_libraries(massociate ${DAAL_LIBRARY} ${TBB_LIBRARY})
+target_link_libraries(massociate ${DAAL_LIBRARY} ${MKL_LIBRARY} ${TBB_LIBRARY})
 target_include_directories(massociate PUBLIC  ${PUBLIC_HEADER_FILES})
 target_include_directories(massociate PRIVATE ${PRIVATE_HEADER_FILES})
 set_target_properties(massociate PROPERTIES

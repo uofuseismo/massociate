@@ -12,6 +12,7 @@ public:
     uint64_t mIdentifier = 0;
     double mPickTime = 0;
     double mStd = 1;
+    double mStaticCorrection = 0;
     MAssociate::Polarity mPolarity = MAssociate::Polarity::UNKNOWN;
     bool mHaveIdentifier = false;
     bool mHavePickTime = false;
@@ -64,6 +65,7 @@ void Pick::clear() noexcept
     pImpl->mIdentifier = 0;
     pImpl->mPickTime = 0;
     pImpl->mStd = 1;
+    pImpl->mStaticCorrection = 0;
     pImpl->mPolarity = MAssociate::Polarity::UNKNOWN;
     pImpl->mHaveIdentifier = false;
     pImpl->mHavePickTime = false;
@@ -176,4 +178,15 @@ uint64_t Pick::getIdentifier() const
 bool Pick::haveIdentifier() const noexcept
 {
     return pImpl->mHaveIdentifier;
+}
+
+/// Static correction
+void Pick::setStaticCorrection(const double correction) noexcept
+{
+    pImpl->mStaticCorrection = correction;
+}
+
+double Pick::getStaticCorrection() const noexcept
+{
+    return pImpl->mStaticCorrection;
 }

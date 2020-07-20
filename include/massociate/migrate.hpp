@@ -142,6 +142,7 @@ public:
      *                      [0, \c getNumberOfPointsInTravelTimeTable()].
      * @result The travel time of a phase from the `source' at the index
      *         to the given station in seconds.
+     * @note There that there is no static correction added.
      */
     [[nodiscard]] T getTravelTime(const std::string &network,
                                   const std::string &station,
@@ -203,7 +204,25 @@ public:
      * @throws std::runtime_error if the image is not yet computed.
      * @sa \c haveImage()
      */
-    std::pair<int, T> getImageMaximum() const;
+    [[nodiscard]] std::pair<int, T> getImageMaximum() const;
+    /*!
+     * @result This is the travel time in seconds from each pick to the
+     *         maximum in the migration image for each pick.  Note that the
+     *         static corrections have been added into the maximum.
+     * @throws std::runtime_error if the image is not yet coputed.
+     * @sa \c getImageMaximum()
+     */
+    [[nodiscard]] std::vector<double> getTravelTimesToMaximum() const;
+    /*!
+     * @param[in] normalize   If true then normalize so that the contributions
+     *                        sum to unity.
+     * @result Each pick's contribution to the maximum.  This can be useful
+     *         for tie breaking when a waveform identifier/phase pair 
+     *         contributes twice but the associator must choose one or the
+     *         other.
+     */
+    [[nodiscard]] std::vector<double> 
+        getContributionToMaximum(const bool normalize = true) const;
     /*! @} */
 private:
     class MigrateImpl;

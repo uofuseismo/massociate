@@ -23,6 +23,10 @@ public:
      * @brief Constructor.
      */
     Associator();
+
+    /*! @name Destructors
+     * @{
+     */
     /*!
      * @brief Destructor.
      */
@@ -31,7 +35,11 @@ public:
      * @brief Releases all memory and resets the class.
      */
     void clear() noexcept;
+    /*! @} */
 
+    /*! @name Step 1: Initiliazation
+     * @{
+     */
     /*!
      * @brief Initializes the associator class.
      * @param parameters   The parameters from which to initialize this class.
@@ -43,6 +51,77 @@ public:
      * @return True indicates that the class is initialized.
      */
     [[nodiscard]] bool isInitialized() const noexcept;
+    /*! @} */
+
+    /*! @name Step 2: Set Travel Time Tables
+     * @{
+     */
+    /*!
+     * @return The expected number of points in a travel time table.
+     * @throws std::runtime_error if the class is not initialized.
+     */
+    [[nodiscard]] int getNumberOfPointsInTravelTimeTable() const;
+    /*!
+     * @brief Sets the travel time table for the network/station/phase.
+     * @param network   The network name.
+     * @param station   The station name.
+     * @param phase     The seismic phase, e.g., P or S.
+     * @param nPoints   The number of points in the field.  This must match
+     *                  \c getNumberOfPointsInTravelTimeTable().
+     * @param times
+     */
+    template<typename U>
+    void setTravelTimeTable(const std::string &network,
+                            const std::string &station,
+                            const std::string &phase,
+                            int nPoints, const U times[]);
+    /*!
+     * @brief This is a debugging routine for getting the travel time table
+     *        corresponding to the network, station, phase.
+     * @return The travel times (seconds) from the given network/station/phase
+     *         to all points.
+     * @throws std::runtime_error if the travel time table doesn't exist.
+     * @sa \c haveTravelTimeTable()
+     */
+    [[nodiscard]]
+    std::vector<T> getTravelTimeTable(const std::string &network,
+                                      const std::string &station,
+                                      const std::string &phase) const;
+    /*!
+     * @param[in] network  The network name.
+     * @param[in] station  The station name.
+     * @param[in] phase    The seismic phase.
+     * @return True indicates the table for this network/station/phase tuple
+     *         exists.
+     */
+    [[nodiscard]]
+    bool haveTravelTimeTable(const std::string &network,
+                             const std::string &station,
+                             const std::string &phase) const noexcept;
+    /*!
+     * @return True indicates that all travel time tables have been set.
+     */
+    [[nodiscard]] bool haveAllTravelTimeTables() const noexcept;
+    /*!
+     * @brief Gets the travel time for the network/station/phase given a
+     *        source at the specified index.
+     * @param[in] network   The network name.
+     * @param[in] station   The station name.
+     * @param[in] phase     The phase name.
+     * @param[in] index     The index.  This must be in the range
+     *                      [0, \c getNumberOfPointsInTravelTimeTable()].
+     * @result The travel time of a phase from the `source' at the index
+     *         to the given station in seconds.
+     */
+    [[nodiscard]] T getTravelTime(const std::string &network,
+                                  const std::string &station,
+                                  const std::string &phase,
+                                  int index) const;
+    /*!
+     * @result The maximum differential travel time in seconds.
+     */
+    [[nodiscard]] T getMaximumDifferentialTravelTime() const noexcept;
+    /*! @} */
 
     /*! @name Step 3: Set Picks
      * @{

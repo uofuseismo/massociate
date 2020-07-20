@@ -20,7 +20,8 @@ TEST(MAssociate, AssociatorParameters)
     double dbscanEpsilon = 0.33;
     int pageRankIterations = 25;
     double pageRankDamping = 0.6;
-    int nTables= 8;
+    int nTables = 8;
+    int tileSize = 128;
     MAssociate::AssociatorParameters parameters;
 
     EXPECT_NO_THROW(
@@ -29,6 +30,9 @@ TEST(MAssociate, AssociatorParameters)
 
     EXPECT_NO_THROW(parameters.setNumberOfTravelTimeTables(nTables));
     EXPECT_EQ(parameters.getNumberOfTravelTimeTables(), nTables);
+ 
+    EXPECT_NO_THROW(parameters.setTileSize(tileSize));
+    EXPECT_EQ(parameters.getTileSize(), tileSize);
 
     EXPECT_NO_THROW(parameters.setDBSCANEpsilon(dbscanEpsilon));
     EXPECT_NEAR(parameters.getDBSCANEpsilon(), dbscanEpsilon, 1.e-14); 
@@ -46,6 +50,7 @@ TEST(MAssociate, AssociatorParameters)
     MAssociate::AssociatorParameters pCopy(parameters);
     EXPECT_EQ(pCopy.getMinimumNumberOfArrivalsToNucleate(), minArrivals);
     EXPECT_EQ(pCopy.getNumberOfTravelTimeTables(), nTables);
+    EXPECT_EQ(pCopy.getTileSize(), tileSize);
     EXPECT_NEAR(pCopy.getDBSCANEpsilon(), dbscanEpsilon, 1.e-14);
     EXPECT_EQ(pCopy.getDBSCANMinimumClusterSize(), dbscanClusterSize);
     EXPECT_NEAR(pCopy.getPageRankDampingFactor(), pageRankDamping, 1.e-14);
@@ -114,10 +119,12 @@ TEST(MAssociate, Associator)
     auto nTables = 2*nrec;
     MAssociate::Associator<float> associator;
     parameters.setNumberOfTravelTimeTables(nTables);
-    associator.initialize(parameters, geometry);
+    EXPECT_NO_THROW(associator.initialize(parameters, geometry));
+    EXPECT_TRUE(associator.isInitialized());
     // Create travel time tables
     for (int i=0; i<nrec; ++i)
     {
+        std::string station = "T" + std::to_string(i + 1);
         auto xr = x0 + iRecX[i]*dx;
         auto yr = y0 + iRecY[i]*dy;
         auto zr = z0 + iRecZ[i]*dz;
@@ -125,6 +132,10 @@ TEST(MAssociate, Associator)
                                           vp, x0, y0, z0);
         auto sTable = makeTravelTimeTable(xr, yr, zr, dx, dy, dz, nx, ny, nz,
                                           vs, x0, y0, z0);
+        associator.setTravelTimeTable(sncl.getNetwork(), station, "P",
+                                      pTable.size(), pTable.data());
+        associator.setTravelTimeTable(sncl.getNetwork(), station, "S",
+                                      sTable.size(), sTable.data());
     } 
     // Create a list of picks
     int nPicks = 0;
@@ -145,7 +156,7 @@ TEST(MAssociate, Associator)
                                              srcX[isrc], srcY[isrc], srcZ[isrc],
                                              vs) + originTimes[isrc];
             MAssociate::Pick pick;
-            pick.setIdentifier(nPicks);
+            pick.setIdentifier(nPicks + 100*isrc);
             pick.setWaveformIdentifier(sncl);
             pick.setTime(pTime);
             pick.setPhaseName("P");
@@ -154,7 +165,7 @@ TEST(MAssociate, Associator)
             nPicks = nPicks + 1;
             if (i%2 == isrc%2)
             {
-                pick.setIdentifier(nPicks);
+                pick.setIdentifier(nPicks + 100*isrc);
                 pick.setTime(sTime);
                 pick.setPhaseName("S");
                 pick.setStandardDeviation(0.4/std::sqrt(12.));
@@ -164,7 +175,12 @@ TEST(MAssociate, Associator)
         }
     }
     // Add picks
- 
+    for (const auto &pick : picks)
+    {
+        EXPECT_NO_THROW(associator.addPick(pick));
+    }
+    // Associate
+    associator.associate(); 
 /*
     std::vector<double> xSources({1000, 5000, 5000});
     std::vector<double> ySources({2000, 6000, 6000});

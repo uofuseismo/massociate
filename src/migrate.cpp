@@ -197,6 +197,15 @@ public:
     std::vector<MAssociate::Pick> mPicks;
     // For the ia'th pick this returns the corresponding table identifier.
     std::vector<int> mPickTableIdentifier;
+    // The ia'th's picks contribution to the maximum objective function.
+    std::vector<double> mContribution;
+    // The travel time from the location of the objective function's
+    // maximum to the ia'th pick.
+    std::vector<double> mTravelTimesToMaximum;
+    // Defines the connectivity between picks 
+    std::vector<double> mSimilarityMatrix;
+    std::vector<std::pair<int, int>> mAdjacency;
+    std::vector<double> mEdgeWeights;
     MigrationParameters mParameters;
     T mMaxDifferentialTravelTime =-1;
     int mNumberOfTiles = 0;
@@ -258,6 +267,11 @@ void Migrate<T>::clear() noexcept
     pImpl->mTableNames.clear();
     pImpl->mPicks.clear();
     pImpl->mPickTableIdentifier.clear();
+    pImpl->mSimilarityMatrix.clear();
+    pImpl->mAdjacency.clear();
+    pImpl->mEdgeWeights.clear();
+    pImpl->mTravelTimesToMaximum.clear();
+    pImpl->mContribution.clear();
     pImpl->mMaxDifferentialTravelTime =-1;
     pImpl->mNumberOfTiles = 0;
     pImpl->mNumberOfTables = 0;
@@ -592,8 +606,10 @@ void Migrate<T>::migrate()
             auto ip2 = pickTablePairs[iPair].pickIndices.second;
             T p1 = pImpl->mPicks[ip1].getTime();
             T std1 = pImpl->mPicks[ip1].getStandardDeviation();
+            T tCorr1 = pImpl->mPicks[ip1].getStaticCorrection();
             T p2 = pImpl->mPicks[ip2].getTime();
             T std2 = pImpl->mPicks[ip2].getStandardDeviation();
+            T tCorr2 = pImpl->mPicks[ip2].getStaticCorrection();
             // Source
             auto it1 = pImpl->getTableIndex(tile, t1);
             auto it2 = pImpl->getTableIndex(tile, t2);
@@ -609,7 +625,8 @@ void Migrate<T>::migrate()
                 #pragma omp simd aligned(tPtr1, tPtr2 : 64)
                 for (int i = 0; i < nLocal; ++i)
                 {
-                    auto deltaT = tPtr2[i] - tPtr1[i];
+                    auto deltaT = (tPtr2[i] + tCorr2)
+                                - (tPtr1[i] + tCorr1);
                     imageLocal[i] = imageLocal[i]
                         + analyticGaussianCorrelation(deltaT, p1, p2,
                                                       normalizeAmp,
@@ -625,7 +642,8 @@ void Migrate<T>::migrate()
                 #pragma omp simd aligned(tPtr1, tPtr2 : 64)
                 for (int i = 0; i < nLocal; ++i)
                 {
-                    auto deltaT = tPtr2[i] - tPtr1[i];
+                    auto deltaT = (tPtr2[i] + tCorr2)
+                                - (tPtr1[i] + tCorr1);
                     imageLocal[i] = imageLocal[i]
                         + analyticBoxcarCorrelation(deltaT, p1, p2, w1, w2);
                      //if (jt1 + i == 13873){std::cout << deltaT << "," << p2 - p1 << std::endl;}
@@ -645,6 +663,9 @@ void Migrate<T>::migrate()
     std::vector<T> contribution(nPicks, 0);
     std::vector<double> travelTime(nPicks, 0);
     std::vector<bool> haveTravelTime(nPicks, false);
+    pImpl->mSimilarityMatrix.resize(nPicks*nPicks, 0);
+    pImpl->mAdjacency.resize(nPairs);
+    pImpl->mEdgeWeights.resize(nPairs, 0);
     T optSum = 0;
     T half = 0.5;
     for (int iPair=0; iPair<nPairs; ++iPair)
@@ -655,13 +676,15 @@ void Migrate<T>::migrate()
         auto ip2 = pickTablePairs[iPair].pickIndices.second;
         T p1 = pImpl->mPicks[ip1].getTime();
         T std1 = pImpl->mPicks[ip1].getStandardDeviation();
+        T tCorr1 = pImpl->mPicks[ip1].getStaticCorrection();
         T p2 = pImpl->mPicks[ip2].getTime();
         T std2 = pImpl->mPicks[ip2].getStandardDeviation();
+        T tCorr2 = pImpl->mPicks[ip2].getStaticCorrection();
         // Source
         auto it1 = pImpl->getTableIndex(tile, t1);
         auto it2 = pImpl->getTableIndex(tile, t2);
-        T tEst1 = mTables[it1 + optimumGridInTile];
-        T tEst2 = mTables[it2 + optimumGridInTile];
+        T tEst1 = mTables[it1 + optimumGridInTile] + tCorr1;
+        T tEst2 = mTables[it2 + optimumGridInTile] + tCorr2;
         auto deltaT = tEst2 - tEst1;
         travelTime[ip1] = tEst1;
         travelTime[ip2] = tEst2;
@@ -686,15 +709,51 @@ void Migrate<T>::migrate()
             T w2 = sqrt12*std2;
             pdf = analyticBoxcarCorrelation(deltaT, p1, p2, w1, w2);
         }
+        pImpl->mAdjacency[iPair] = std::make_pair(ip1, ip2);
+        pImpl->mEdgeWeights[iPair] = pdf;
         // Both pick 1 and pick 2 contribute equally.  
         // This ensures that sum(contributions) = value in mImage[maxIndex] 
+        auto indx = ip1*nPicks + ip2;
+        auto jndx = ip2*nPicks + ip1;
+        pImpl->mSimilarityMatrix[indx] = pdf;
+        pImpl->mSimilarityMatrix[jndx] = pdf;
         contribution[ip1] = contribution[ip1] + half*pdf;
         contribution[ip2] = contribution[ip2] + half*pdf;
         optSum = optSum + pdf;
     }
+    pImpl->mContribution.resize(contribution.size());
+    std::copy(contribution.begin(), contribution.end(),
+              pImpl->mContribution.begin());
+    pImpl->mTravelTimesToMaximum = travelTime;
+    // Create the main diagonal
+    for (int ip=0; ip<nPicks; ++ip)
+    {
+        T std1 = pImpl->mPicks[ip].getStandardDeviation();
+        T pdf = 0;
+        T zero = 0;
+        if (method == AnalyticCorrelationFunction::GAUSSIAN)
+        {
+            T normalizeAmp
+               = analyticGaussianCorrelationAmplitudeNormalization(std1, std1);
+            T normalizeExp
+               = analyticGaussianCorrelationExponentNormalization(std1, std1);
+            pdf = analyticGaussianCorrelation(zero, zero, zero,
+                                              normalizeAmp, normalizeExp);
+        }
+        else
+        {
+            T w1 = sqrt12*std1;
+            pdf = analyticBoxcarCorrelation(zero, zero, zero, w1, w1);
+        }
+        auto indx = ip*nPicks + ip;
+std::cout << pdf << ","  << indx << std::endl; 
+        pImpl->mSimilarityMatrix[indx] = pdf;
+    }
+
     // Normalize and sort into descending order
     if (optSum == 0){optSum = 1;}
     for (auto &c : contribution){c = c/optSum;}
+/*
     auto perm = argSortDescending(contribution);
     // Perform some basic clustering
     std::vector<double> originTimes;
@@ -707,7 +766,8 @@ void Migrate<T>::migrate()
         {
             originTimes.push_back(pImpl->mPicks[ia].getTime()
                                 - travelTime[ia]);
-            weights.push_back(contribution[ia]);
+            weights.push_back(std::max(std::numeric_limits<T>::epsilon(),
+                                       contribution[ia]));
         }
     }
     // Cluster
@@ -741,6 +801,7 @@ void Migrate<T>::migrate()
 for (auto &ot : originTimes){std::cout << ot << std::endl;}
 std::cout << contribution[perm[0]] << std::endl;
 std::cout << nClusters << "," << optSum << std::endl;
+*/
     pImpl->mMaxIndex = maxIndex;
     pImpl->mHaveImage = true;
 }
@@ -755,6 +816,41 @@ std::pair<int, T> Migrate<T>::getImageMaximum() const
     }
     return std::pair(pImpl->mMaxIndex, pImpl->mImage[pImpl->mMaxIndex]);
 }
+
+/// Gets the travel times to all picks from the maximum index
+template<class T>
+std::vector<double> Migrate<T>::getTravelTimesToMaximum() const
+{
+    if (!haveImage()){throw std::runtime_error("Image not yet computed");}
+    return pImpl->mTravelTimesToMaximum;
+}
+
+/// Gets the picks contribution to maximum index
+template<class T>
+std::vector<double>
+    Migrate<T>::getContributionToMaximum(const bool normalize) const
+{
+    if (!haveImage()){throw std::runtime_error("Image not yet computed");}
+    if (normalize)
+    {
+        const double zero = 0;
+        std::vector<double> result(pImpl->mContribution.size(), zero);
+        auto xnorm = std::accumulate(pImpl->mContribution.begin(),
+                                     pImpl->mContribution.end(), zero);
+        if (xnorm > 0)
+        {
+            xnorm = 1./xnorm;
+            std::transform(pImpl->mContribution.begin(),
+                           pImpl->mContribution.end(),
+                           result.begin(),
+                           std::bind(std::multiplies<T>(),
+                                     std::placeholders::_1, xnorm));
+        }
+        return result;
+    }  
+    return pImpl->mContribution;
+}
+
 
 /// Migration image computed?
 template<class T>
@@ -778,7 +874,8 @@ int Migrate<T>::getNumberOfPointsInTravelTimeTable() const
 }
 
 ///--------------------------------------------------------------------------///
-/// Instantiate the template class
+///                         Instantiate the Templates                        ///
+///--------------------------------------------------------------------------///
 template class MAssociate::Migrate<double>;
 template class MAssociate::Migrate<float>;
 

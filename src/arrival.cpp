@@ -12,6 +12,7 @@ public:
     uint64_t mIdentifier = 0;
     double mArrivalTime = 0;
     double mStd = 1;
+    double mStaticCorrection = 0;
     MAssociate::Polarity mPolarity = MAssociate::Polarity::UNKNOWN;
     bool mHaveIdentifier = false;
     bool mHaveArrivalTime = false;
@@ -64,6 +65,7 @@ void Arrival::clear() noexcept
     pImpl->mIdentifier = 0;
     pImpl->mArrivalTime = 0;
     pImpl->mStd = 1;
+    pImpl->mStaticCorrection = 0;
     pImpl->mPolarity = MAssociate::Polarity::UNKNOWN;
     pImpl->mHaveIdentifier = false;
     pImpl->mHaveArrivalTime = false;
@@ -176,4 +178,15 @@ uint64_t Arrival::getIdentifier() const
 bool Arrival::haveIdentifier() const noexcept
 {
     return pImpl->mHaveIdentifier;
+}
+
+/// Static correction
+void Arrival::setStaticCorrection(const double correction) noexcept
+{
+    pImpl->mStaticCorrection = correction;
+}
+
+double Arrival::getStaticCorrection() const noexcept
+{
+    return pImpl->mStaticCorrection;
 }

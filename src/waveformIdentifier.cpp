@@ -133,3 +133,14 @@ bool WaveformIdentifier::isEmpty() const noexcept
                + pImpl->mChannel.size() + pImpl->mLocation.size();
     return (lenos == 0);
 }
+
+std::ostream&
+MAssociate::operator<<(std::ostream &os,
+                       const MAssociate::WaveformIdentifier waveid)
+{
+    auto result = waveid.getNetwork() + "."
+                + waveid.getStation() + "."
+                + waveid.getChannel() + "."
+                + waveid.getLocationCode();
+    return os << result;
+}

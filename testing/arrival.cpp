@@ -11,6 +11,7 @@ TEST(MAssociate, Arrival)
     double time = 10;
     double std = 0.2;
     double weight = 1/std;
+    double staticCorrection = 0.2;
     uint64_t id = 66823;
     std::string phase = "P";
     auto polarity = MAssociate::Polarity::DILATATIONAL;
@@ -44,6 +45,9 @@ TEST(MAssociate, Arrival)
     EXPECT_NO_THROW(arrival.setIdentifier(id));
     EXPECT_EQ(arrival.getIdentifier(), id);
 
+    EXPECT_NO_THROW(arrival.setStaticCorrection(staticCorrection));
+    EXPECT_NEAR(arrival.getStaticCorrection(), staticCorrection, 1.e-14);
+
     // Copy
     MAssociate::Arrival copyArrival(arrival);
     EXPECT_EQ(copyArrival.getWaveformIdentifier(), sncl);
@@ -53,6 +57,7 @@ TEST(MAssociate, Arrival)
     EXPECT_NEAR(copyArrival.getWeight(), weight, 1.e-14);
     EXPECT_NEAR(copyArrival.getStandardDeviation(), std, 1.e-14);
     EXPECT_EQ(copyArrival.getIdentifier(), id);
+    EXPECT_NEAR(copyArrival.getStaticCorrection(), staticCorrection, 1.e-14);
 }
 
 }

@@ -60,4 +60,4 @@ Install the softare (didn't try this one yet)
 
     make install 
 
-Should you have permissions reissue then preface the above command with sudo.
+Should you have permissions problems then preface the above command with sudo.

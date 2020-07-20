@@ -219,6 +219,8 @@ TEST(MAssociate, Migrate)
     double dz = 1000;
     double vp = 4000;
     double vs = 2200;
+    double pStaticCorrection =-0.05;
+    double sStaticCorrection = 0.05;
     int nrec = 11;
     int isrcx = 15;
     int isrcy = 37;
@@ -323,14 +325,17 @@ TEST(MAssociate, Migrate)
         auto xr = x0 + irecx[i]*dx;
         auto yr = y0 + irecy[i]*dy;
         auto zr = z0 + irecz[i]*dz;
-        double pTime = computeTravelTime(xr, yr, zr, xs, ys, zs, vp) + ot;
-        double sTime = computeTravelTime(xr, yr, zr, xs, ys, zs, vs) + ot;
+        double pTime = computeTravelTime(xr, yr, zr, xs, ys, zs, vp)
+                     + ot + pStaticCorrection;
+        double sTime = computeTravelTime(xr, yr, zr, xs, ys, zs, vs)
+                     + ot + sStaticCorrection;
         MAssociate::Pick pick;
         pick.setIdentifier(nPicks);
         pick.setWaveformIdentifier(sncl);
         pick.setTime(pTime);
         pick.setPhaseName("P");
         pick.setStandardDeviation(0.2/sqrt12);
+        pick.setStaticCorrection(pStaticCorrection);
         EXPECT_NO_THROW(migrate.addPick(pick));
         picks.push_back(pick);
         nPicks = nPicks + 1;        
@@ -340,6 +345,7 @@ TEST(MAssociate, Migrate)
             pick.setTime(sTime);
             pick.setPhaseName("S");
             pick.setStandardDeviation(0.4/sqrt12);
+            pick.setStaticCorrection(sStaticCorrection);
             EXPECT_NO_THROW(migrate.addPick(pick));
             picks.push_back(pick);
             nPicks = nPicks + 1;
@@ -379,17 +385,21 @@ TEST(MAssociate, Migrate)
     // Migrate
     EXPECT_NO_THROW(migrate.migrate());
     auto imageMax = migrate.getImageMaximum();
+    auto ttimesToMax = migrate.getTravelTimesToMaximum();
     EXPECT_EQ(imageMax.first, isrc);
     EXPECT_NEAR(imageMax.second, sumBoxcar, 1.e-3); // 477.5*1.e-6 is mach eps
     for (int ia=0; ia<static_cast<int> (picks.size()); ++ia)
     {
         auto waveid = picks[ia].getWaveformIdentifier();
+        // Note that there is no static correction 
         auto tEst = migrate.getTravelTime(waveid.getNetwork(),
                                           waveid.getStation(),
                                           picks[ia].getPhaseName(),
                                           imageMax.first);
+        tEst = tEst + picks[ia].getStaticCorrection(); // Fix the static correction
         auto tObs = picks[ia].getTime();
         EXPECT_NEAR(tObs - ot, tEst, 1.e-4);
+        EXPECT_NEAR(ttimesToMax[ia], tObs - ot, 1.e-4);
     }
     // Migrate Gaussian
     EXPECT_NO_THROW(migrateGauss.migrate());
