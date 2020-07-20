@@ -284,7 +284,7 @@ TEST(MAssociate, Migrate)
                 {
                     auto t2 = migrate.getTravelTimeTable(network, station,
                                                          phases[jp]);
-                    #pragma omp simd reduction(min:dtMaxRef)
+                    //#pragma omp simd reduction(max:dtMaxRef)
                     for (int k=0; k<static_cast<int> (t2.size()); ++k)
                     {
                         dtMaxRef = std::max(dtMaxRef, std::abs(t2[k] - t1[k]));
@@ -388,7 +388,7 @@ TEST(MAssociate, Migrate)
     auto imageMax = migrate.getImageMaximum();
     auto ttimesToMax = migrate.getTravelTimesToMaximum();
     EXPECT_EQ(imageMax.first, isrc);
-    EXPECT_NEAR(imageMax.second, sumBoxcar, 1.e-3); // 477.5*1.e-6 is mach eps
+    EXPECT_NEAR(imageMax.second, sumBoxcar, 2.e-3); // 477.5*1.e-6 is mach eps
     for (int ia=0; ia<static_cast<int> (picks.size()); ++ia)
     {
         auto waveid = picks[ia].getWaveformIdentifier();
