@@ -1,6 +1,7 @@
 #include <string>
 #include <vector>
 #include "massociate/mesh/cartesian/points3d.hpp"
+#include "massociate/mesh/spherical/points3d.hpp"
 
 using namespace MAssociate::Mesh::Cartesian;
 

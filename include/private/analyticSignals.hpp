@@ -23,7 +23,7 @@ int sgn(const T x)
  * @param[in] w1   The width of the first boxcar in seconds.
  * @param[in] w2   The width of the second boxcar in seconds.
  */
-#pragma omp simd uniform(p1, p2, w1, w2) 
+#pragma omp declare simd uniform(p1, p2, w1, w2)
 template<typename T>
 [[maybe_unused]]
 T analyticBoxcarCorrelation(const T t,
@@ -123,7 +123,7 @@ T analyticGaussianCorrelationExponentNormalization(const T sd1, const T sd2)
  *            \right )
  *         \f ]
  */
-#pragma omp simd uniform(xnormAmp, xnormExp)
+#pragma omp declare simd uniform(xnormAmp, xnormExp)
 template<typename T>
 [[maybe_unused]]
 T analyticGaussianCorrelation(const T t,

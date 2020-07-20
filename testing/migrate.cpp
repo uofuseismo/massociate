@@ -1,3 +1,4 @@
+#include <vector>
 #include <cmath>
 #include "massociate/migrationParameters.hpp"
 #include "massociate/migrate.hpp"

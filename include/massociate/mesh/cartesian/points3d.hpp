@@ -21,7 +21,7 @@ public:
     /*!
      * @brief Destructor.
      */
-    virtual ~Points3D();
+    ~Points3D();
     /*!
      * @brief Clears the memory/resets the class.
      */
@@ -36,7 +36,7 @@ public:
      * @brief Clone self.
      * @return A deep copy of this.
      */
-    [[nodiscard]] std::unique_ptr<Points3D<T>> cloneCartesianPoints3D() const override;
+    [[nodiscard]] std::unique_ptr<MAssociate::Mesh::Cartesian::Points3D<T>> cloneCartesianPoints3D() const override;
 
     /*!
      * @brief Sets the number of points in the field.

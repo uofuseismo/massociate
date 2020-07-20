@@ -589,7 +589,7 @@ void Migrate<T>::migrate()
     #pragma omp parallel for \
      shared(pickTablePairs, method, mTables, numberOfTiles) \
      shared(nPicks, nPairs, nPts, tileSize) \
-     default(None)
+     default(none)
     for (int tile = 0; tile < numberOfTiles; ++tile)
     {
         // Destination

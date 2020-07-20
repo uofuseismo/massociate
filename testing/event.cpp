@@ -1,3 +1,4 @@
+#include <vector>
 #include "massociate/event.hpp"
 #include "massociate/waveformIdentifier.hpp"
 #include "massociate/arrival.hpp"

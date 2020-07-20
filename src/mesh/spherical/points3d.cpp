@@ -1,7 +1,9 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <algorithm>
 #include "massociate/mesh/spherical/points3d.hpp"
+#include "massociate/mesh/cartesian/points3d.hpp"
 
 using namespace MAssociate::Mesh;
 using namespace MAssociate::Mesh::Spherical;
