@@ -1,5 +1,6 @@
 #include <string>
 #include "massociate/pick.hpp"
+#include "massociate/arrival.hpp"
 #include "massociate/waveformIdentifier.hpp"
 
 using namespace MAssociate;

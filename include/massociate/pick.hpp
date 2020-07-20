@@ -4,6 +4,7 @@
 #include "massociate/enums.hpp"
 namespace MAssociate
 {
+class Arrival;
 class WaveformIdentifier;
 /*!
  * @class Pick "pick.hpp" "massociate/pick.hpp"

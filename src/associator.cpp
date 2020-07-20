@@ -8,6 +8,7 @@
 #include "massociate/migrationParameters.hpp"
 #include "massociate/event.hpp"
 #include "massociate/pick.hpp"
+#include "massociate/arrival.hpp"
 #include "massociate/waveformIdentifier.hpp"
 #include "massociate/migrate.hpp"
 #include "massociate/mesh/spherical/points3d.hpp"
@@ -511,6 +512,11 @@ std::cout << "Origin time: " << originTime << std::endl;
             auto location = pImpl->mMigrate.getImageMaximum();
             MAssociate::Event event;
             event.setOriginTime(originTime); 
+            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
+            {
+                Arrival arrival(picksInCluster[ip]);
+                event.addArrival(arrival);
+            }
             // And remove the associated picks
             for (const auto pickInCluster : picksInCluster)
             {

@@ -4,6 +4,7 @@
 #include "massociate/enums.hpp"
 namespace MAssociate
 {
+class Pick;
 class WaveformIdentifier;
 /*!
  * @class Arrival "arrival.hpp" "massociate/arrival.hpp"
@@ -26,6 +27,11 @@ public:
      */
     Arrival(const Arrival &arrival);
     /*!
+     * @brief Creats an arrival from a pick.
+     * @param[in] arrival  The pick from which to create this arrival.
+     */
+    explicit Arrival(const Pick &pick);
+    /*!
      * @brief Move constructor.
      * @param[in,out] arrival  The class from which to initialize thi class.
      *                         On exit, arrival's behavior is undefined.
@@ -42,6 +48,13 @@ public:
      * @result A deep copy of the arrival.
      */
     Arrival& operator=(const Arrival &arrival);
+    /*!
+     * @brief Creates an arrival from a pick.
+     * @param[in] pick   The pick to convert to an arrival.
+     * @result The resulting arrival.
+     * @note You may still have to add additional fields to the arrival.
+     */
+    Arrival& operator=(const Pick &pick);
     /*!
      * @brief Move assignment operator.
      * @param[in,out] arrival  The arrival class whose memory will be moved

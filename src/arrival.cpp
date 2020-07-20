@@ -1,5 +1,6 @@
 #include <string>
 #include "massociate/arrival.hpp"
+#include "massociate/pick.hpp"
 #include "massociate/waveformIdentifier.hpp"
 
 using namespace MAssociate;
@@ -30,6 +31,11 @@ Arrival::Arrival(const Arrival &arrival)
     *this = arrival;
 }
 
+Arrival::Arrival(const Pick &pick)
+{
+    *this = pick;
+}
+
 /// Move c'tor
 [[maybe_unused]]
 Arrival::Arrival(Arrival &&arrival) noexcept
@@ -44,6 +50,25 @@ Arrival& Arrival::operator=(const Arrival &arrival)
     pImpl = std::make_unique<ArrivalImpl> (*arrival.pImpl);
     return *this;
 }
+
+
+/// Copy
+Arrival& Arrival::operator=(const Pick &pick)
+{
+    Arrival arrival;
+    if (pick.haveWaveformIdentifier())
+    {
+        arrival.setWaveformIdentifier(pick.getWaveformIdentifier());
+    }
+    if (pick.havePhaseName()){arrival.setPhaseName(pick.getPhaseName());}
+    if (pick.haveIdentifier()){arrival.setIdentifier(pick.getIdentifier());}
+    if (pick.haveTime()){arrival.setTime(pick.getTime());}
+    arrival.setStandardDeviation(pick.getStandardDeviation());
+    arrival.setStaticCorrection(pick.getStaticCorrection());
+    arrival.setPolarity(pick.getPolarity());
+    *this = arrival;
+    return *this; 
+} 
 
 /// Move assignment
 Arrival& Arrival::operator=(Arrival &&arrival) noexcept
