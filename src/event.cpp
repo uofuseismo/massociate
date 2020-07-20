@@ -16,11 +16,17 @@ public:
     double mLongitude = 0;
     double mDepth = 0;
     double mOriginTime = 0;
+    double mX = 0;
+    double mY = 0;
+    double mZ = 0;
     bool mHaveIdentifier = false;
     bool mHaveLatitude = false;
     bool mHaveLongitude = false;
     bool mHaveDepth = false;
     bool mHaveOriginTime = false;
+    bool mHaveX = false;
+    bool mHaveY = false;
+    bool mHaveZ = false;
 };
 
 /// C'tor
@@ -74,6 +80,60 @@ void Event::clear() noexcept
     pImpl->mHaveLongitude = false;
     pImpl->mHaveDepth = false;
     pImpl->mHaveOriginTime = false;
+}
+
+/// x position
+void Event::setXPosition(const double x) noexcept
+{
+    pImpl->mX = x;
+    pImpl->mHaveX = true;
+}
+
+double Event::getXPosition() const
+{
+    if (!haveXPosition()){throw std::runtime_error("x position not set");}
+    return pImpl->mX;
+}
+
+bool Event::haveXPosition() const noexcept
+{
+    return pImpl->mHaveX;
+}
+
+// y position
+void Event::setYPosition(const double y) noexcept
+{
+    pImpl->mY = y;
+    pImpl->mHaveY = true;
+}
+
+double Event::getYPosition() const
+{
+    if (!haveYPosition()){throw std::runtime_error("y position not set");}
+    return pImpl->mY;
+}
+
+bool Event::haveYPosition() const noexcept
+{
+    return pImpl->mHaveY;
+}
+
+// z position
+void Event::setZPosition(const double z) noexcept
+{
+    pImpl->mZ = z;
+    pImpl->mHaveZ = true;
+}
+
+double Event::getZPosition() const
+{
+    if (!haveZPosition()){throw std::runtime_error("z position not set");}
+    return pImpl->mZ;
+}
+
+bool Event::haveZPosition() const noexcept
+{
+    return pImpl->mHaveZ;
 }
 
 /// Latitude

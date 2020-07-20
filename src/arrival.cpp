@@ -13,6 +13,7 @@ public:
     uint64_t mIdentifier = 0;
     double mArrivalTime = 0;
     double mStd = 1;
+    double mTravelTime =-1;
     double mStaticCorrection = 0;
     MAssociate::Polarity mPolarity = MAssociate::Polarity::UNKNOWN;
     bool mHaveIdentifier = false;
@@ -91,6 +92,7 @@ void Arrival::clear() noexcept
     pImpl->mArrivalTime = 0;
     pImpl->mStd = 1;
     pImpl->mStaticCorrection = 0;
+    pImpl->mTravelTime =-1;
     pImpl->mPolarity = MAssociate::Polarity::UNKNOWN;
     pImpl->mHaveIdentifier = false;
     pImpl->mHaveArrivalTime = false;
@@ -214,4 +216,24 @@ void Arrival::setStaticCorrection(const double correction) noexcept
 double Arrival::getStaticCorrection() const noexcept
 {
     return pImpl->mStaticCorrection;
+}
+
+/// Travel time
+void Arrival::setTravelTime(const double travelTime)
+{
+    if (travelTime < 0)
+    {
+        throw std::invalid_argument("Travel time must be positive");
+    }
+    pImpl->mTravelTime = travelTime;
+}
+
+double Arrival::getTravelTime() const
+{
+    return pImpl->mTravelTime;
+}
+
+bool Arrival::haveTravelTime() const noexcept
+{
+    return (pImpl->mTravelTime >=0);
 }

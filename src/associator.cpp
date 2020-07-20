@@ -136,6 +136,7 @@ public:
         }
         return result;
     }
+    std::vector<MAssociate::Event> mEvents;
     MAssociate::AssociatorParameters mParameters;
     Migrate<T> mMigrate;
     std::vector<MAssociate::Pick> mPicks;
@@ -146,6 +147,7 @@ public:
     std::unique_ptr<MAssociate::Mesh::Cartesian::Points3D<T>>
         mCartesianPoints3D = nullptr;
     MAssociate::Geometry mGeometry = MAssociate::Geometry::UNKNOWN;
+    uint64_t mEventID = 0;
     T mMaxDifferentialTime = 0;
     bool mInitialized = false;
 };
@@ -165,6 +167,7 @@ Associator<T>::~Associator() = default;
 template<class T>
 void Associator<T>::clear() noexcept
 {
+    pImpl->mEvents.clear();
     pImpl->mMigrate.clear();
     pImpl->mPicks.clear();
     pImpl->mAttemptedAssociations.clear();
@@ -180,6 +183,7 @@ void Associator<T>::clear() noexcept
     pImpl->mCartesianPoints3D = nullptr;
     pImpl->mGeometry = MAssociate::Geometry::UNKNOWN;
     pImpl->mMaxDifferentialTime =-1;
+    pImpl->mEventID = 0;
     pImpl->mInitialized = false;
 } 
 
@@ -485,7 +489,7 @@ int minPicksToNucleate = 6;
                 }
             }
             pImpl->mMigrate.migrate();
-            // Get the travel times and location.
+            // Get the travel times and location.  Note, this has a correction.
             travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();
             // Compute origin time.  For least-squares this is the weighted 
             // average.  Note, the weights are normalized such that they
@@ -509,14 +513,23 @@ int minPicksToNucleate = 6;
             originTime = originTime + T0; // Add in pick shift
 std::cout << "Origin time: " << originTime << std::endl;
             // Now create the event
-            auto location = pImpl->mMigrate.getImageMaximum();
+            auto locationPair = pImpl->mMigrate.getImageMaximum();
+            auto location = pImpl->indexToPoints3D(locationPair.first);
             MAssociate::Event event;
             event.setOriginTime(originTime); 
+            event.setXPosition(location.x);
+            event.setYPosition(location.y);
+            event.setZPosition(location.z);
             for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
             {
                 Arrival arrival(picksInCluster[ip]);
+                arrival.setTravelTime(travelTimesToMaximum[ip]
+                                    - arrival.getStaticCorrection());
                 event.addArrival(arrival);
             }
+            pImpl->mEventID = pImpl->mEventID + 1;
+            event.setIdentifier(pImpl->mEventID);
+            pImpl->mEvents.push_back(event);
             // And remove the associated picks
             for (const auto pickInCluster : picksInCluster)
             {
@@ -527,8 +540,8 @@ std::cout << "Origin time: " << originTime << std::endl;
                     {
                         picks.erase(picks.begin() + ip);
                     }
-               } 
-            } 
+                }
+            }
         }
         // If there were no clusters in the window then iterate.  Otherwise,
         // attempt to process the window event.

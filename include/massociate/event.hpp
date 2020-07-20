@@ -92,11 +92,11 @@ public:
     /*!
      * @result The event's x position.
      */ 
-    double getXPosition() const;
+    [[nodiscard]] double getXPosition() const;
     /*!
      * @result True indicates that the x position has been set.
      */
-    bool haveXPosition();
+    [[nodiscard]] bool haveXPosition() const noexcept;
 
     /*!
      * @brief Sets the event's y position.  This could also be the latitude.
@@ -106,11 +106,11 @@ public:
     /*!
      * @result The event's y position.
      */
-    double getYPosition() const;
+    [[nodiscard]] double getYPosition() const;
     /*!
      * @result True indicates that the y position has been set.
      */
-    bool haveYPosition();
+    [[nodiscard]] bool haveYPosition() const noexcept;
 
     /*!
      * @brief Sets the event's z position.
@@ -120,11 +120,11 @@ public:
     /*!
      * @result The event's z position.
      */
-    double getZPosition() const;
+    [[nodiscard]] double getZPosition() const;
     /*!
      * @result True indicates that the z position has been set.
      */
-    bool haveZPosition();
+    [[nodiscard]] bool haveZPosition() const noexcept;
 
     /*!
      * @brief Sets the event's latitude.

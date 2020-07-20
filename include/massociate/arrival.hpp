@@ -204,6 +204,24 @@ public:
     [[nodiscard]] MAssociate::Polarity getPolarity() const noexcept;
     /*! @} */
 
+    /*! @name Travel Time
+     * @{
+     */
+    /*!
+     * @param[in] travelTime  The source to receiver travel time in seconds.
+     * @throws std::invalid_argument if this is negative
+     */
+    void setTravelTime(double travelTime);
+    /*!
+     * @result The travel time in seconds from the source to the receiver.
+     * @throws std::runtime_error if \c haveTravelTime() is false.
+     */
+    [[nodiscard]] double getTravelTime() const;
+    /*!
+     * @result True indicates that the travel time was set.
+     */
+    [[nodiscard]] bool haveTravelTime() const noexcept;
+
     /*! @name Static Correction
      * @{
      */

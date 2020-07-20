@@ -12,6 +12,9 @@ TEST(MAssociator, Event)
     double longitude =-111.8910;
     double depth = 5000;
     double originTime = 50;
+    double x = 2;
+    double y = 3;
+    double z = 4;
     MAssociate::Arrival arrival;
     MAssociate::WaveformIdentifier waveid;
     MAssociate::Event event;
@@ -32,6 +35,13 @@ TEST(MAssociator, Event)
 
     EXPECT_NO_THROW(event.setOriginTime(originTime));
     EXPECT_NEAR(event.getOriginTime(), originTime, 1.e-10);
+
+    event.setXPosition(x);
+    EXPECT_NEAR(event.getXPosition(), x, 1.e-14);
+    event.setYPosition(y);
+    EXPECT_NEAR(event.getYPosition(), y, 1.e-14);
+    event.setZPosition(z);
+    EXPECT_NEAR(event.getZPosition(), z, 1.e-14);
 
     // Create some arrivals - check this is copy c'tor
     std::vector<MAssociate::Arrival> arrivals;
@@ -71,6 +81,9 @@ TEST(MAssociator, Event)
     EXPECT_NEAR(eCopy.getLongitude(), longitude + 360, 1.e-10);
     EXPECT_NEAR(eCopy.getDepth(), depth, 1.e-10);
     EXPECT_NEAR(eCopy.getOriginTime(), originTime, 1.e-10); 
+    EXPECT_NEAR(eCopy.getXPosition(), x, 1.e-14);
+    EXPECT_NEAR(eCopy.getYPosition(), y, 1.e-14);
+    EXPECT_NEAR(eCopy.getZPosition(), z, 1.e-14);
     auto arrivalsBack = eCopy.getArrivals(); 
     for (int ia=0; ia<static_cast<int> (arrivals.size()); ++ia)
     {
