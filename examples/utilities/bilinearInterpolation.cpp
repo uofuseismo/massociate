@@ -127,7 +127,7 @@ public:
         }
         else
         {
-            status = dfdSearchCells1D(mTaskX, DF_METHOD_STD,
+            status = dfdSearchCells1D(mTaskY, DF_METHOD_STD,
                                       nq, yq, DF_NO_HINT,
                                       DF_NO_APRIORI_INFO, mCellY.data());
         }
@@ -160,14 +160,74 @@ public:
 };
 
 /// C'tor
-template<typename T>
+template<class T>
 BilinearInterpolation<T>::BilinearInterpolation() :
     pImpl(std::make_unique<BilinearInterpolationImpl> ())
 {
 }
 
+/// Copy c'tor
+template<class T>
+BilinearInterpolation<T>::BilinearInterpolation(
+    const BilinearInterpolation &bilin)
+{
+    *this = bilin;
+}
+
+/// Move c'tor
+template<class T>
+BilinearInterpolation<T>::BilinearInterpolation(
+    BilinearInterpolation &&bilin) noexcept
+{
+    *this = std::move(bilin);
+}
+
+/// Copy assignment
+template<class T>
+BilinearInterpolation<T>&
+BilinearInterpolation<T>::operator=(const BilinearInterpolation &bilin)
+{
+    pImpl = std::make_unique<BilinearInterpolationImpl> ();
+    if (bilin.isInitialized())
+    {
+        // The tasks points to memory so it is safer to simply reinitialize
+        auto nx = bilin.pImpl->mNumberOfXPoints;
+        auto ny = bilin.pImpl->mNumberOfYPoints;
+        auto nxy = nx*ny;
+        if (bilin.pImpl->mUniformGrid)
+        {
+            std::pair<T, T> xLimits(bilin.pImpl->mXEndPoints[0],
+                                    bilin.pImpl->mYEndPoints[1]);
+            std::pair<T, T> yLimits(bilin.pImpl->mYEndPoints[0],
+                                    bilin.pImpl->mYEndPoints[1]);
+            initialize(xLimits, yLimits, nx, ny, bilin.pImpl->mF.data()); 
+        }
+        else
+        {
+            initialize(nx, bilin.pImpl->mXPoints.data(),
+                       ny, bilin.pImpl->mYPoints.data(),
+                       nxy, bilin.pImpl->mF.data());
+        }
+        // If result was computed then get it
+        pImpl->mInterpolatedF = bilin.pImpl->mInterpolatedF;
+        pImpl->mHaveInterpolatedFunction
+            = bilin.pImpl->mHaveInterpolatedFunction; 
+    }
+    return *this;
+}
+
+/// Move assignment 
+template<class T>
+BilinearInterpolation<T>&
+BilinearInterpolation<T>::operator=(BilinearInterpolation &&bilin) noexcept
+{
+    if (&bilin == this){return *this;}
+    pImpl = std::move(bilin.pImpl);
+    return *this;
+}
+
 /// Destructor
-template<typename T>
+template<class T>
 BilinearInterpolation<T>::~BilinearInterpolation()
 {
     clear();
@@ -278,7 +338,7 @@ void BilinearInterpolation<T>::clear() noexcept
 }
 
 /// Determines if the class is initialized
-template<typename T>
+template<class T>
 bool BilinearInterpolation<T>::isInitialized() const noexcept
 {
     return pImpl->mInitialized;
