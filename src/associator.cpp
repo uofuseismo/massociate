@@ -559,6 +559,13 @@ std::cout << "Origin time: " << originTime << std::endl;
 */
 }
 
+/// Gets the events
+template<class T>
+std::vector<MAssociate::Event> Associator<T>::getEvents() const
+{
+    return pImpl->mEvents;
+}
+
 ///--------------------------------------------------------------------------///
 ///                          Template Instantiation                          ///
 ///--------------------------------------------------------------------------///

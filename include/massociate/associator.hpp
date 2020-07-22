@@ -4,6 +4,8 @@
 namespace MAssociate
 {
 class Pick;
+class Event;
+class Arrival;
 class AssociatorParameters;
 namespace Mesh
 {
@@ -148,8 +150,9 @@ public:
     void clearPicks() noexcept;
     /*! @} */
 
-
     void associate();
+
+    std::vector<MAssociate::Event> getEvents() const;
 private:
     class AssociatorImpl;
     std::unique_ptr<AssociatorImpl> pImpl;
