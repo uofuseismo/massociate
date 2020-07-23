@@ -11,7 +11,7 @@ public:
     int mPoints =-1;
     int mTileSize = 1024;
     AnalyticCorrelationFunction mAnalyticFunction
-       = AnalyticCorrelationFunction::GAUSSIAN;
+        = AnalyticCorrelationFunction::BOXCAR;
 };
 
 /// Constructor

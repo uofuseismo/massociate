@@ -1,6 +1,7 @@
 #ifndef MASSOCIATE_ASSOCIATORPARAMETERS_HPP
 #define MASSOCIATE_ASSOCIATORPARAMETERS_HPP
 #include <memory>
+#include "massociate/enums.hpp"
 namespace MAssociate
 {
 class AssociatorParameters
@@ -93,6 +94,19 @@ public:
      * @return
      */
     [[nodiscard]] int getMinimumNumberOfArrivalsToNucleate() const noexcept;
+
+    /*!
+     * @brief Sets the analytic correlation function to migrate.
+     */
+    void setAnalyticCorrelationFunction(
+        MAssociate::AnalyticCorrelationFunction function) noexcept;
+    /*!
+     * @return The analytic correlation function to migrate.
+     */
+    [[nodiscard]] MAssociate::AnalyticCorrelationFunction
+        getAnalyticCorrelationFunction() const noexcept;
+    /*! @} */
+
 
     /*! @name DBSCAN Clustering
      * @{

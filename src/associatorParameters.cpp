@@ -11,6 +11,8 @@ public:
     int mPageRankIterations = 20;
     int mTables =-1;
     int mTileSize = 1024;
+    AnalyticCorrelationFunction mAnalyticFunction
+        = AnalyticCorrelationFunction::BOXCAR;
 };
 
 /// C'tor
@@ -65,6 +67,7 @@ void AssociatorParameters::clear() noexcept
     pImpl->mPageRankIterations = 20;
     pImpl->mTables =-1;
     pImpl->mTileSize = 1024;
+    pImpl->mAnalyticFunction = AnalyticCorrelationFunction::BOXCAR;
 }
 
 /// Sets/gets number of tables
@@ -181,4 +184,17 @@ void AssociatorParameters::setTileSize(const int tileSize)
 int AssociatorParameters::getTileSize() const noexcept
 {
     return pImpl->mTileSize;
+}
+
+/// Sets/gets correlation function
+void AssociatorParameters::setAnalyticCorrelationFunction(
+    MAssociate::AnalyticCorrelationFunction function) noexcept
+{
+    pImpl->mAnalyticFunction = function;
+}
+
+AnalyticCorrelationFunction
+AssociatorParameters::getAnalyticCorrelationFunction() const noexcept
+{
+    return pImpl->mAnalyticFunction;
 }

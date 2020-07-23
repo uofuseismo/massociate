@@ -22,6 +22,7 @@ TEST(MAssociate, AssociatorParameters)
     double pageRankDamping = 0.6;
     int nTables = 8;
     int tileSize = 128;
+    auto function = MAssociate::AnalyticCorrelationFunction::GAUSSIAN;
     MAssociate::AssociatorParameters parameters;
 
     EXPECT_NO_THROW(
@@ -33,6 +34,9 @@ TEST(MAssociate, AssociatorParameters)
  
     EXPECT_NO_THROW(parameters.setTileSize(tileSize));
     EXPECT_EQ(parameters.getTileSize(), tileSize);
+
+    parameters.setAnalyticCorrelationFunction(function);
+    EXPECT_EQ(parameters.getAnalyticCorrelationFunction(), function);
 
     EXPECT_NO_THROW(parameters.setDBSCANEpsilon(dbscanEpsilon));
     EXPECT_NEAR(parameters.getDBSCANEpsilon(), dbscanEpsilon, 1.e-14); 
@@ -50,6 +54,7 @@ TEST(MAssociate, AssociatorParameters)
     MAssociate::AssociatorParameters pCopy(parameters);
     EXPECT_EQ(pCopy.getMinimumNumberOfArrivalsToNucleate(), minArrivals);
     EXPECT_EQ(pCopy.getNumberOfTravelTimeTables(), nTables);
+    EXPECT_EQ(pCopy.getAnalyticCorrelationFunction(), function);
     EXPECT_EQ(pCopy.getTileSize(), tileSize);
     EXPECT_NEAR(pCopy.getDBSCANEpsilon(), dbscanEpsilon, 1.e-14);
     EXPECT_EQ(pCopy.getDBSCANMinimumClusterSize(), dbscanClusterSize);

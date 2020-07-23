@@ -249,6 +249,8 @@ void Associator<T>::initialize(const AssociatorParameters &parameters,
     auto tileSize = nPoints;
     tileSize = std::min(tileSize, parmsWork.getTileSize());
     migrationParms.setTileSize(tileSize);
+    migrationParms.setAnalyticCorrelationFunction(
+        parmsWork.getAnalyticCorrelationFunction());
     pImpl->mMigrate.initialize(migrationParms);
     // Finish this off
     pImpl->mParameters = parmsWork;
