@@ -7,11 +7,9 @@ using namespace MAssociate;
 class MigrationParameters::MigrationParametersImpl
 {
 public:
-    double mDBSCANEpsilon = 0.2;
     int mTables =-1;
     int mPoints =-1;
     int mTileSize = 1024;
-    int mDBSCANMinClusterSize = 6;
     AnalyticCorrelationFunction mAnalyticFunction
        = AnalyticCorrelationFunction::GAUSSIAN;
 };
@@ -45,8 +43,6 @@ void MigrationParameters::clear() noexcept
 {
     pImpl->mPoints =-1;
     pImpl->mTables =-1;
-    pImpl->mDBSCANEpsilon = 0.2;
-    pImpl->mDBSCANMinClusterSize = 6;
     pImpl->mTileSize = 1024;
     pImpl->mAnalyticFunction = AnalyticCorrelationFunction::GAUSSIAN;
 }
@@ -155,30 +151,3 @@ MigrationParameters::getAnalyticCorrelationFunction() const noexcept
     return pImpl->mAnalyticFunction;
 }
 
-/// Sets/gets DBSCAN epsilon
-void MigrationParameters::setDBSCANEpsilon(const double epsilon)
-{
-    if (epsilon < 0){throw std::invalid_argument("epsilon cannot be negative");}
-    pImpl->mDBSCANEpsilon = epsilon;
-}
-
-double MigrationParameters::getDBSCANEpsilon() const noexcept
-{
-    return pImpl->mDBSCANEpsilon;
-}
-
-/// Sets gets DBSCAN min cluster size
-void MigrationParameters::setDBSCANMinimumClusterSize(
-    const int minimumClusterSize)
-{
-    if (minimumClusterSize < 2)
-    {
-        throw std::invalid_argument("minimum cluster size must be at least 2");
-    }
-    pImpl->mDBSCANMinClusterSize = minimumClusterSize;
-}
-
-int MigrationParameters::getDBSCANMinimumClusterSize() const noexcept
-{
-    return pImpl->mDBSCANMinClusterSize;
-}

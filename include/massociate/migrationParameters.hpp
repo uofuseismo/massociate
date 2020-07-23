@@ -137,69 +137,6 @@ public:
         getAnalyticCorrelationFunction() const noexcept;
     /*! @} */
 
-    /*! @name DBSCAN Clustering
-     * @{
-     */
-    /*!
-     * @brief DBSCAN adds elements to the cluster that are within epsilon of
-     *        any point in the cluster.  This algorithm clusters on origin times
-     *        so any point within epsilon seconds of any origin time in a cluster
-     *        will be assimilated. 
-     * @param[in] epsilon   The maximum time between origin times in a cluster
-     *                      measured in seconds.
-     * @throws std::invalid_argument if this is negative.
-     */
-    void setDBSCANEpsilon(double epsilon);
-    /*!
-     * @result The maximum time (seconds0 between origin times in a cluster.
-     */
-    [[nodiscard]] double getDBSCANEpsilon() const noexcept;
-    /*!
-     * @brief Sets the number of origin times required to form a cluster.
-     * @param[in] minimumClusterSize   The minimum number of origin times 
-     *                                 to form a cluster (seed an event).
-     * @throws std::invalid_argument if this is not at least 2. 
-     * @note Since this will seed the event you'll like want this number to
-     *       be at least 5 or 6.
-     */
-    void setDBSCANMinimumClusterSize(int minimumClusterSize);
-    /*!
-     * @result The number of origin times required to form a cluster.
-     */
-    [[nodiscard]] int getDBSCANMinimumClusterSize() const noexcept;
-    /*! @} */
-
-    /*! @name PageRank 
-     * @{
-     */
-    /*!
-     * @brief Sets the number of iterations in the  PageRank power iteration.
-     * @param[in] nIterations   The number of iterations.
-     * @throws std::invalid_argument if this is not positive.
-     */
-    void setNumberOfPageRankIterations(int nIterations);
-    /*!
-     * @result The number of page rank iterations.
-     */
-    [[nodiscard]] int getNumberOfPageRankIterations() const noexcept;
-    /*!
-     * @brief Sets the damping in the PageRank power iteration 
-     *        \f$
-     *           \textbf{r}_{i+1}
-     *         = d \mathcal{M} \textbf{r}_i + \frac{1 - d}{N} I
-     *        \f$.
-     *        where \$ d \f$ is the damping factor and \f$ \textbf{r}_i \f$
-     *        are the page ranks at the i'th iteration.
-     * @param[in] damping  The damping factor which must be in the range
-     *                     \f$ [0,1 ] \f$.
-     * @throws std::invalid_argument if the damping factor is out of range.
-     */
-    void setPageRankDampingFactor(double damping);
-    /*!
-     * @result The damping factor.
-     */
-    [[nodiscard]] double getPageRankDampingFactor() const noexcept;
-    /*! @} */
 private:
     class MigrationParametersImpl;
     std::unique_ptr<MigrationParametersImpl> pImpl;

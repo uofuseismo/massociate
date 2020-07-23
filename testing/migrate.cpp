@@ -27,8 +27,8 @@ TEST(MAssociate, MigrationParameters)
     int nTables = 5;
     int nPoints = 110;
     int tileSize = 90;
-    int dbscanClusterSize = 5;
-    double dbscanEpsilon = 0.3;
+    //int dbscanClusterSize = 5;
+    //double dbscanEpsilon = 0.3;
     auto function = MAssociate::AnalyticCorrelationFunction::BOXCAR;
 
     EXPECT_NO_THROW(parameters.setNumberOfPointsInTravelTimeTable(nPoints));
@@ -44,18 +44,18 @@ TEST(MAssociate, MigrationParameters)
 
     parameters.setAnalyticCorrelationFunction(function);
     EXPECT_EQ(parameters.getAnalyticCorrelationFunction(), function);
-    EXPECT_NO_THROW(parameters.setDBSCANEpsilon(dbscanEpsilon));
-    EXPECT_NEAR(parameters.getDBSCANEpsilon(), dbscanEpsilon, 1.e-12);
-    EXPECT_NO_THROW(parameters.setDBSCANMinimumClusterSize(dbscanClusterSize));
-    EXPECT_EQ(parameters.getDBSCANMinimumClusterSize(), dbscanClusterSize);
+    //EXPECT_NO_THROW(parameters.setDBSCANEpsilon(dbscanEpsilon));
+    //EXPECT_NEAR(parameters.getDBSCANEpsilon(), dbscanEpsilon, 1.e-12);
+    //EXPECT_NO_THROW(parameters.setDBSCANMinimumClusterSize(dbscanClusterSize));
+    //EXPECT_EQ(parameters.getDBSCANMinimumClusterSize(), dbscanClusterSize);
 
     MAssociate::MigrationParameters pCopy(parameters);
     EXPECT_EQ(pCopy.getNumberOfPointsInTravelTimeTable(), nPoints);
     EXPECT_EQ(pCopy.getNumberOfTravelTimeTables(), nTables);
     EXPECT_EQ(pCopy.getTileSize(), nPoints);
     EXPECT_EQ(pCopy.getAnalyticCorrelationFunction(), function);
-    EXPECT_NEAR(pCopy.getDBSCANEpsilon(), dbscanEpsilon, 1.e-12);
-    EXPECT_EQ(pCopy.getDBSCANMinimumClusterSize(), dbscanClusterSize);
+    //EXPECT_NEAR(pCopy.getDBSCANEpsilon(), dbscanEpsilon, 1.e-12);
+    //EXPECT_EQ(pCopy.getDBSCANMinimumClusterSize(), dbscanClusterSize);
 
     parameters.clear();
 }
