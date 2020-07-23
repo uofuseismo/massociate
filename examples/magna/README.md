@@ -14,7 +14,7 @@ The velocity model in wasatch.txt is used by the UUSS for events in the Wasatch 
     31.5  7.50 4.31
     45.5  7.90 4.54
 
-Note, that this model has been modified so that 0 is actually two kilometers above sea-level.
+Note, that this model has been modified so that 0 is actually 1.5 kilometers above sea-level.
 
 Next, we run GrowClust's travel time calculator with the following script
 
