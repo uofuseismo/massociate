@@ -6,15 +6,15 @@ This is an example of associating data from the 2020 Magna, Utah 5.7 aftershock 
 
 To begin we must generate travel time tables.  For simplicitly we will use a  1D model and the travel time calculator from [GrowClust](https://github.com/interseismic/PhaseLink/blob/master/raytracer.tar.gz).
 
-The velocity model that we'll use in the Wasatch Front is given by depth (km), Vp (km/s), Vs (km/s) tuples
+The velocity model in wasatch.txt is used by the UUSS for events in the Wasatch Front.  The file is defined by depth (km), Vp (km/s), Vs (km/s) tuples
 
      0.0  3.40 1.95
-    5.54  5.90 3.39
-    21.1  6.40 3.68
-    32.0  7.50 4.31
-    46.0  7.90 4.54
+    5.04  5.90 3.39
+    20.6  6.40 3.68
+    31.5  7.50 4.31
+    45.5  7.90 4.54
 
-Note, that this model has been modified so that 0 is actually +2km above sea-level.  Call this file wasatch.txt.
+Note, that this model has been modified so that 0 is actually two kilometers above sea-level.
 
 Next, we run GrowClust's travel time calculator with the following script
 
@@ -76,4 +76,9 @@ Next, we run GrowClust's travel time calculator with the following script
 After creating the travel time tables we will repackage them into a 3D point cloud for use by the associator.  To do this run
 
     ttables
+    
+The result will be an HDF5 archive which contains travel time fields at nodes.  In plan the view the result looks like
+
+![Grid search nodes](gridSearch.jpg)
+    
 

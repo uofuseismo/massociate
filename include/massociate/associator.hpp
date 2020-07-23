@@ -152,7 +152,7 @@ public:
 
     void associate();
 
-    std::vector<MAssociate::Event> getEvents() const;
+    [[nodiscard]] std::vector<MAssociate::Event> getEvents() const;
 private:
     class AssociatorImpl;
     std::unique_ptr<AssociatorImpl> pImpl;

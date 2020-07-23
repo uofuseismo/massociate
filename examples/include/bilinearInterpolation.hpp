@@ -5,10 +5,42 @@ template<class T=double>
 class BilinearInterpolation
 {
 public:
+    /*! @name Constructors
+     * @{
+     */
     /*!
      * @brief Constructor.
      */
     BilinearInterpolation();
+    /*!
+     * @brief Copy c'tor
+     * @param[in] bilin  The bilinear interpolation class from which to 
+     *                   initialize this class.
+     */
+    BilinearInterpolation(const BilinearInterpolation &bilin);
+    /*!
+     * @brief Move constructor.
+     * @param[in,out] bilin   The bilinear interpolation class from which to
+     *                        initialize this class.  On exit, bilin's behavior
+     *                        undefined.
+     */
+    BilinearInterpolation(BilinearInterpolation &&bilin) noexcept;
+    /*! @} */
+
+    /*!
+     * @brief Copy assignment.
+     * @param[in] bilin   The bilinear interpolation class to copy to this.
+     * @result A deep copy of the input bilinear interpolation class.
+     */
+    BilinearInterpolation& operator=(const BilinearInterpolation &bilin);
+    /*!
+     * @brief Move assignment.
+     * @param[in,out] bilin  The bilinear interpolation class whose memory will
+     *                       be moved to this.  On exit, bilin's behavior
+     *                       is undefined.
+     * @result The memory from bilin moved to this.
+     */
+    BilinearInterpolation& operator=(BilinearInterpolation &&bilin) noexcept;
 
     /*! @name Destructors
      * @{

@@ -222,7 +222,7 @@ public:
      *         other.
      */
     [[nodiscard]] std::vector<double> 
-        getContributionToMaximum(const bool normalize = true) const;
+        getContributionToMaximum(bool normalize = true) const;
     /*! @} */
 private:
     class MigrateImpl;

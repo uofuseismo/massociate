@@ -147,6 +147,7 @@ std::vector<struct PickTablePair>
  * @param[in] v  The values to argument sort.
  * @result A permutation array such that v[perm[:]] is in descending order.
  */
+/*
 template <typename T>
 std::vector<int> argSortDescending(const std::vector<T> &v)
 {
@@ -163,6 +164,7 @@ std::vector<int> argSortDescending(const std::vector<T> &v)
                      });
     return perm;
 }
+*/
 
 }
 
@@ -170,7 +172,8 @@ template<class T>
 class Migrate<T>::MigrateImpl
 {
 public:
-    size_t getTableIndex(const size_t tile, const size_t tableID) const
+    [[nodiscard]] size_t getTableIndex(const size_t tile,
+                                       const size_t tableID) const
     {
         auto result
            = tile*static_cast<size_t> (mNumberOfTables)
@@ -178,9 +181,9 @@ public:
            + tableID*static_cast<size_t> (mPaddedTileSize);
         return result;
     }
-    int getTableIdentifier(const std::string &network,
-                           const std::string &station,
-                           const std::string &phase) const
+    [[nodiscard]] int getTableIdentifier(const std::string &network,
+                                         const std::string &station,
+                                         const std::string &phase) const
     {
         auto name = makeTableName(network, station, phase);
         auto it = std::find(mTableNames.begin(),mTableNames.end(), name);
@@ -190,31 +193,33 @@ public:
     }
     /// Holds the travel time tables.  This has dimension:
     /// [mNumberOfTiles x mNumberOfTables x mPaddedTileSize]
+    [[maybe_unused]]
     std::vector<T, boost::alignment::aligned_allocator<T, 64>> mTables;
+    [[maybe_unused]]
     std::vector<T, boost::alignment::aligned_allocator<T, 64>> mImage;
-    std::vector<std::string> mTableNames;
+    [[maybe_unused]] std::vector<std::string> mTableNames;
     /// Contains the pick information and table identifier
-    std::vector<MAssociate::Pick> mPicks;
+    [[maybe_unused]] std::vector<MAssociate::Pick> mPicks;
     // For the ia'th pick this returns the corresponding table identifier.
-    std::vector<int> mPickTableIdentifier;
+    [[maybe_unused]] std::vector<int> mPickTableIdentifier;
     // The ia'th's picks contribution to the maximum objective function.
-    std::vector<double> mContribution;
+    [[maybe_unused]] std::vector<double> mContribution;
     // The travel time from the location of the objective function's
     // maximum to the ia'th pick.
-    std::vector<double> mTravelTimesToMaximum;
+    [[maybe_unused]] std::vector<double> mTravelTimesToMaximum;
     // Defines the connectivity between picks 
     std::vector<double> mSimilarityMatrix;
     std::vector<std::pair<int, int>> mAdjacency;
     std::vector<double> mEdgeWeights;
     MigrationParameters mParameters;
     T mMaxDifferentialTravelTime =-1;
-    int mNumberOfTiles = 0;
-    int mNumberOfTables = 0;
-    int mTileSize = 0;
-    int mPaddedTileSize = 0;
-    int mMaxIndex =-1;
-    bool mHaveImage = false;
-    bool mInitialized = false;
+    [[maybe_unused]] int mNumberOfTiles = 0;
+    [[maybe_unused]] int mNumberOfTables = 0;
+    [[maybe_unused]] int mTileSize = 0;
+    [[maybe_unused]] int mPaddedTileSize = 0;
+    [[maybe_unused]] int mMaxIndex =-1;
+    [[maybe_unused]] bool mHaveImage = false;
+    [[maybe_unused]] bool mInitialized = false;
 };
 
 /// Constructor
@@ -746,7 +751,7 @@ void Migrate<T>::migrate()
             pdf = analyticBoxcarCorrelation(zero, zero, zero, w1, w1);
         }
         auto indx = ip*nPicks + ip;
-std::cout << pdf << ","  << indx << std::endl; 
+        //std::cout << pdf << ","  << indx << std::endl;
         pImpl->mSimilarityMatrix[indx] = pdf;
     }
 
@@ -843,8 +848,10 @@ std::vector<double>
             std::transform(pImpl->mContribution.begin(),
                            pImpl->mContribution.end(),
                            result.begin(),
-                           std::bind(std::multiplies<T>(),
-                                     std::placeholders::_1, xnorm));
+                           [xnorm](const double x) -> double
+                           {
+                               return x*xnorm;
+                           });
         }
         return result;
     }  
