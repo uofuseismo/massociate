@@ -1,4 +1,5 @@
 #include <string>
+#include <iomanip>
 #include <vector>
 #include <algorithm>
 #include <numeric>
@@ -13,6 +14,7 @@
 #include "massociate/migrate.hpp"
 #include "massociate/mesh/spherical/points3d.hpp"
 #include "massociate/mesh/cartesian/points3d.hpp"
+#include "private/weightedStatistics.hpp"
 #include "private/dbscan.hpp"
 
 using namespace MAssociate;
@@ -52,20 +54,197 @@ std::vector<MAssociate::Pick>
     return result;
 }
 
-std::vector<int> createCausalClusterFromContribution(
+/// @brief DBSCAN clusters on origin time however there is no requirement that
+///        a station with two picks of the same phase cannot be clustered or
+///        or a P arrival precede an S arrival for a given station.
+///        This routine fixes that by doing the following:
+///         (1) Ensures each cluster has picks that are causal.
+///         (2) Prevents the same station from contributing the same phase
+///             arrival more than once to a cluster.
+///         (3) Reassigns cluster labels so that the cluster whose cumulative
+///             contribution is labeled 0, then second highest is 1, etc.
+///             so that it the `0' cluster is first. 
+///         (4) Ensures each cluster has a minimum number of picks for
+///             nucleation.
+void makeDBSCANClustersCausal(const int nClusters,
+                              const int  minClusterSize,
+                              const std::vector<int> &labels,
+                              const std::vector<double> &contributions,
+                              const std::vector<MAssociate::Pick> &picks,
+                              std::vector<int> *newLabels,
+                              int *nNewClusters)
+{
+    auto nPicks = static_cast<int> (picks.size());
+    *nNewClusters = 0;
+    newLabels->resize(nPicks, -1);
+    std::vector<int> tempLabels(labels.size(), -1);
+    if (nClusters == 0){return;} // Nothing to do
+    std::vector<bool> lchecked(nPicks, false);
+    std::vector<std::pair<int, double>> ranks(nClusters);
+    // Fix each cluster:
+    //   (1) Ensure the cluster is causal
+    //   (2) Note the cluster's cumulative contribution sum 
+    for (int ic=0; ic<nClusters; ++ic)
+    {
+        std::fill(lchecked.begin(), lchecked.end(), false);     
+        for (int i=0; i<nPicks; ++i)
+        {
+            // If the pick is in the cluster and the label hasnt been created
+            if (labels[i] == ic && !lchecked[i])
+            {
+                auto waveid1 = picks[i].getWaveformIdentifier();
+                auto phase1 = picks[i].getPhaseName();
+                int bestIndex = i;
+                auto maxContribution = contributions[i];
+                for (int j=i+1; j<nPicks; ++j)
+                {
+                    // Check this label is in the cluster
+                    if (labels[j] == ic && !lchecked[j])
+                    {
+                        // If the SNLC/phase match then run the tie-breaker
+                        auto waveid2 = picks[j].getWaveformIdentifier();
+                        auto phase2 = picks[j].getPhaseName();
+                        if (phase1 == phase2 && waveid1 == waveid2)
+                        {
+                            if (contributions[j] > maxContribution)
+                            {
+                                bestIndex = j;
+                                maxContribution = contributions[j];
+                            }
+                            else
+                            {
+                                lchecked[j] = true;
+                            }
+                        } // Check check on phase and waveid match
+                    } // Ehd check on another pick in this cluster
+                } // Loop on `upper triangle' of pick matrix
+                tempLabels[bestIndex] = ic; // Add pick that contributed most
+                lchecked[i] = true;
+            }
+        } // Loop on picks 
+        // Ensure that P arrivals come before S arrivals
+        for (int i=0; i<nPicks; ++i)
+        {
+            if (tempLabels[i] == ic)
+            {
+                auto waveid1 = picks[i].getWaveformIdentifier();
+                auto phase1 = picks[i].getPhaseName();
+                auto time1 = picks[i].getTime();
+                for (int j=i+1; j<nPicks; ++j)
+                {
+                    if (tempLabels[j] == ic)
+                    {
+                        auto waveid2 = picks[j].getWaveformIdentifier();
+                        auto phase2 = picks[j].getPhaseName();
+                        auto time2 = picks[j].getTime();
+                        if (waveid1 == waveid2)
+                        {
+                            // Make sure P precedes S
+                            if (phase1 == "P" && phase2 == "S")
+                            {
+                                if (time1 >= time2) // P arrives after S
+                                {
+std::cout << "fuck1" << std::endl;
+                                    if (contributions[i] > contributions[j])
+                                    {
+                                        tempLabels[j] =-1;
+                                    }
+                                    else
+                                    {
+                                        tempLabels[i] =-1;
+                                    }
+                                } 
+                            }
+                            else if (phase1 == "S" && phase2 == "P")
+                            {
+std::cout << "fuck2" << std::endl;
+                                if (time1 <= time2) // S arrives before P
+                                {
+                                    if (contributions[i] > contributions[j])
+                                    {
+                                        tempLabels[j] =-1;
+                                    }
+                                    else
+                                    {
+                                        tempLabels[i] =-1;
+                                    }
+                                }
+                            }
+                        } // End check on waveid match
+                    } // End check on tempLabel j in this cluster
+                } // Loop on j picks
+            } // End check on templabel i in this cluster
+        } // Loop on picks
+        // Ensure this cluster has enough picks to nucleate
+        auto nSubCluster = std::count(tempLabels.begin(), tempLabels.end(), ic);
+        double contributionSum = 0;
+        if (nSubCluster < minClusterSize)
+        {
+            nSubCluster = 0;
+            contributionSum =-1;
+        }
+        else
+        {
+            contributionSum = 0;
+            for (int i=0; i<nPicks; ++i)
+            {
+                if (tempLabels[i] == ic)
+                {
+                    contributionSum = contributionSum + contributions[i];
+                }
+           }
+        }
+        ranks[ic] = std::pair(ic, contributionSum);
+    } // Loop on clusters
+    // Now sort the clusters in descending order 
+    std::sort(ranks.begin(), ranks.end(),
+              [](const std::pair<int, double> &a,
+                 const std::pair<int, double> &b)
+              {
+                 return a.second > b.second;
+              });
+    // Reprioritize the clusters so that:
+    //  (1) The cluster who contributes the most is processed first 
+    //  (2) If a causal cluster is too small to nucleate then release all piocks
+    *nNewClusters = 0;
+    for (int ic=0; ic<nClusters; ++ic)
+    {
+        int newLabel = ranks[ic].first;
+        if (ranks[ic].second < 0)
+        {
+            newLabel =-1;
+        }
+        else
+        {
+            *nNewClusters = *nNewClusters + 1;
+        }
+        for (int i=0; i<nPicks; ++i)
+        {
+            if (tempLabels[i] == ic){newLabels->at(i) = newLabel;}
+        }
+    }
+}
+
+int createCausalClusterFromContribution(
     const int cluster,
     const std::vector<int> &labels,
     const std::vector<double> &contributions,
     const std::vector<MAssociate::Pick> &picks,
-    const int minClusterSize = 4)
+    const int minClusterSize,
+    std::vector<int> *newLabels,
+    double *contributionSum)
 {
-    // Do I have enough?
+    bool lProcess = true;
+    *contributionSum = 0;
+    // Initialize
     auto nPicks = static_cast<int> (labels.size());
-    std::vector<int> newLabels(nPicks, -1);
-    auto nInCluster = std::count(labels.begin(), labels.end(), cluster);
-    if (nInCluster < minClusterSize)
+    newLabels->resize(nPicks, -1);
+    auto nSubCluster = std::count(labels.begin(), labels.end(), cluster);
+    // Not enough picks to nucleate so don't bother
+    if (nSubCluster < minClusterSize)
     {
-        return newLabels;
+        nSubCluster = 0;
+        return nSubCluster;
     }
     // Investigate each pick 
     std::vector<bool> lchecked(nPicks, false);
@@ -100,17 +279,30 @@ std::vector<int> createCausalClusterFromContribution(
                    }
                 }
             } // End other phases
-            newLabels[bestIndex] = 0; // Add pick that contributed most
+            newLabels->at(bestIndex) = 0; // Add pick that contributed most
             lchecked[i] = true;
         } // End check on if this pick should be scrutinized
     } // Loop on picks
     // If there are too few picks to nucleate then leave all picks unassociated
-    nInCluster = std::count(newLabels.begin(), newLabels.end(), 0);
-    if (nInCluster < minClusterSize)
+    nSubCluster = std::count(newLabels->begin(), newLabels->end(), 0);
+    if (nSubCluster < minClusterSize)
     {
-        std::fill(newLabels.begin(), newLabels.end(), -1);
+        lProcess = false;
+        nSubCluster = 0;
+        *contributionSum = 0;
+        std::fill(newLabels->begin(), newLabels->end(), -1);
     }
-    return newLabels;
+    else
+    {
+        // Otherwise get the sum of the contributions
+        double sum = 0; 
+        for (int i=0; i<nPicks; ++i)
+        {
+            if (newLabels->at(i) == 0){sum = sum + contributions[i];}
+        }
+        *contributionSum = sum;
+    }
+    return nSubCluster;
 } 
 
 }
@@ -391,16 +583,18 @@ void Associator<T>::associate()
     // modeled differential travel times.
     auto picks = pImpl->mPicks;
     auto maxDT = getMaximumDifferentialTravelTime();
-    auto rootT0 = picks[0].getTime();
+    auto minArrivalsToNucleate
+        = pImpl->mParameters.getMinimumNumberOfArrivalsToNucleate();
+    double rootT0 = picks[0].getTime();
     auto T0 = rootT0;
     int nClusters0 =-1; // Number of clusters in previous iteration
     for (int kwin=0; kwin<nPicks; ++kwin)
     {
         auto T1 = T0 + maxDT*2; // TODO make 2 a factor
         // Get the picks in this chunk of time.
-        auto localPicks = getPicksInWindow(picks, T0, T1); 
-        if (localPicks.size() < 4) // TODO fix this
-        { 
+        auto localPicks = getPicksInWindow(picks, T0, T1, true); 
+        if (localPicks.size() < minArrivalsToNucleate) // TODO fix this
+        {
             T0 = T1;
             continue;
         }
@@ -410,8 +604,10 @@ void Associator<T>::associate()
         {
             pImpl->mMigrate.addPick(localPick);
         }
-int minPicksToNucleate = 6;
+        // Migrate
         pImpl->mMigrate.migrate();
+        // Attempt to cluster (origin times) given the maximum of the
+        // migration image
         auto travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();
         auto contributions = pImpl->mMigrate.getContributionToMaximum();
         std::vector<double> originTimes(localPicks.size());
@@ -419,18 +615,151 @@ int minPicksToNucleate = 6;
         {
             originTimes[ip] = localPicks[ip].getTime()
                             - travelTimesToMaximum[ip];  
+std::cout << ip << " " << originTimes[ip] << std::endl;
         } 
         // Cluster origin times.  There is no causality here.  It is just an 
         // approximation of how the picks should be distributed.
         DBSCAN dbscan;
-        dbscan.initialize(0.2, 5); 
+        dbscan.initialize(pImpl->mParameters.getDBSCANEpsilon(),
+                          pImpl->mParameters.getDBSCANMinimumClusterSize()); 
         dbscan.setData(originTimes.size(), 1, originTimes.data());
         dbscan.cluster();
         auto nClusters = dbscan.getNumberOfClusters();
         auto labels = dbscan.getLabels();
+        // Enforce causality in the clusters.  Tie-breaking between, say,
+        // two P picks on CTU is done by comparing each contribution's to the
+        // migration maximum.
+        int nNewClusters;
+        std::vector<int> newLabels;
+        makeDBSCANClustersCausal(nClusters, minArrivalsToNucleate,
+                                 labels, contributions, localPicks,
+                                 &newLabels, &nNewClusters);
+for (int ic=0; ic<nNewClusters; ++ic)
+{
+for (int i=0; i<newLabels.size(); ++i)
+{
+ if (newLabels[i] == ic)
+ {
+     std::cout << ic << " " << picks[i].getIdentifier() << " " << picks[i].getWaveformIdentifier() << " " << picks[i].getPhaseName() << std::endl;
+ } 
+}
+}
+        /// Next let's attempt to associate the largest cluster
+        std::vector<MAssociate::Pick> picksInCluster;
+        pImpl->mMigrate.clearPicks();
+        for (int ip=0; ip<static_cast<int> (labels.size()); ++ip)
+        {
+            if (newLabels[ip] == 0)
+            {
+                pImpl->mMigrate.addPick(localPicks[ip]); 
+                picksInCluster.push_back(localPicks[ip]);
+            }
+        }
+        // Locate this batch of picks and solve for an origin time
+        if (pImpl->mMigrate.getNumberOfPicks() > minArrivalsToNucleate)
+        {
+            // Re-migrate
+            pImpl->mMigrate.migrate();
+            // Get the travel times and location.  Note, this has a correction.
+            travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();
+            // Compute origin time.  For least-squares this is the weighted 
+            // average.  For L1 this is the weighted median. 
+            // average.  Note, the weights are normalized such that they
+            // sum to unity hence we don't divide in a subsequent step
+            std::vector<double> weights
+                = pImpl->mMigrate.getContributionToMaximum(true);
+            std::vector<double> residuals(weights.size(), 0);
+            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
+            {
+                std::cout << ip
+                          << "," << picksInCluster[ip].getWaveformIdentifier()
+                          << "," << picksInCluster[ip].getIdentifier()
+                          << "," << picksInCluster[ip].getPhaseName()
+                          << "," << picksInCluster[ip].getTime() << std::endl;
+                // I defined a residual as the observed - predicted time.
+                // Note that the static corrections have already been added
+                // to travelTimesToMaximum. 
+                residuals[ip] = picksInCluster[ip].getTime()
+                              - travelTimesToMaximum[ip]; 
+            }
+            double originTime = 0;
+            if (pImpl->mParameters.getOriginTimeObjectiveFunction() ==
+                MAssociate::OriginTimeObjectiveFunction::L1)
+            {
+                originTime = weightedMedian(residuals.size(),
+                                            residuals.data(), weights.data());
+            }
+            else
+            {
+                originTime = weightedMean(residuals.size(),
+                                          residuals.data(), weights.data());
+            }
+            originTime = originTime + T0; // Add in origin time
+/*
+            double originTime = 0;
+            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
+            {
+                    std::cout << ip << ","
+                      << picksInCluster[ip].getWaveformIdentifier()
+                      << "," << picksInCluster[ip].getIdentifier()
+                      << "," << picksInCluster[ip].getPhaseName()
+                      << "," << picksInCluster[ip].getTime() << std::endl;
+                // The residual is the observed time - predicted time.
+                // Note that the static corrections have already been added
+                // to travelTimesToMaximum.
+                double dt = picksInCluster[ip].getTime()
+                          - travelTimesToMaximum[ip];
+std::cout << "residual " << dt << std::endl;
+                originTime = originTime + weights[ip]*dt;
+            }
+*/
+std::cout << "ot and t0: " << originTime << " " << T0 << std::endl;
+//            originTime = originTime + T0; // Add in pick shift
+            // Now create the event
+            auto locationPair = pImpl->mMigrate.getImageMaximum();
+            auto location = pImpl->indexToPoints3D(locationPair.first);
+            MAssociate::Event event;
+            event.setOriginTime(originTime);
+            event.setXPosition(location.x);
+            event.setYPosition(location.y);
+            event.setZPosition(location.z);
+std::cout << std::setprecision(12);
+std::cout << "Origin time: " << originTime << "(x,y,z)" << location.x << "," << location.y << "," << location.z << std::endl;
+            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
+            {
+                Arrival arrival(picksInCluster[ip]);
+                arrival.setTravelTime(travelTimesToMaximum[ip]
+                                    - arrival.getStaticCorrection());
+                event.addArrival(arrival);
+            }
+            pImpl->mEventID = pImpl->mEventID + 1;
+            event.setIdentifier(pImpl->mEventID);
+            pImpl->mEvents.push_back(event);
+        }
+        // Remove the picks in this cluster
+        for (const auto &pickToRemove : picksInCluster)
+        {
+            int ip = 0;
+            for (auto &p : picks)
+            {
+                if (p.getIdentifier() == pickToRemove.getIdentifier())
+                {
+                    picks.erase(picks.begin() + ip);
+                    break;
+                }
+                ip = ip + 1;
+            }
+        }
+        // Update the time window
+        if (nNewClusters == 0)
+        {
+            T0 = T1;
+        }
+getchar();
+/*
         // This loop will attempt to refine the above clusters in a 
         // causal fashion.  Effectively, this loop looks to assign
-        // picks to earthquakes in the same location but have different
+        // picks to earthquakes in the same location but with different
         // origin times.
         for (int kCluster=0; kCluster<nClusters; ++kCluster)
         {
@@ -440,23 +769,16 @@ int minPicksToNucleate = 6;
             // contribution.  Then greedily strip out subclusters.
             for (int ic=0; ic<nClusters; ++ic)
             {
-                newLabels[ic] = createCausalClusterFromContribution(
+                double contributionSum = 0;
+                auto nSubCluster = createCausalClusterFromContribution(
                                      ic, labels, contributions, localPicks,
-                                     minPicksToNucleate);
-                int nSubCluster = 0;
-                double sum = 0;
-                for (int i=0; i<nPicks; ++i)
-                {
-                    if (newLabels[ic][i] == 0)
-                    {
-                        sum = sum + contributions[i];
-                        nSubCluster = nSubCluster + 1;
-                    }
-                }
-                if (nSubCluster == 0){sum =-1;}
-                ranks[ic] = std::pair(ic, sum);
+                                     minArrivalsToNucleate,
+                                     &newLabels[ic],
+                                     &contributionSum);
+                if (nSubCluster == 0){contributionSum =-1;}
+                ranks[ic] = std::pair(ic, contributionSum);
             }
-            // Sort in descending order
+            // Sort in descending order based on cumulative contributions.
             std::sort(ranks.begin(), ranks.end(), 
                       [](const std::pair<int, double> &a,
                          const std::pair<int, double> &b)
@@ -490,6 +812,9 @@ int minPicksToNucleate = 6;
                     }
                 }
             }
+
+            // It's possible that the largest cluster is too small to migrate.
+         pImpl->mMigrate.getNumberOfPicks(); 
             pImpl->mMigrate.migrate();
             // Get the travel times and location.  Note, this has a correction.
             travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();
@@ -510,10 +835,10 @@ int minPicksToNucleate = 6;
                 // to travelTimesToMaximum. 
                 auto dt = picksInCluster[ip].getTime()
                         - travelTimesToMaximum[ip];
+std::cout << "residual " << dt << std::endl;
                 originTime = originTime + weights[ip]*dt;
             }
             originTime = originTime + T0; // Add in pick shift
-std::cout << "Origin time: " << originTime << std::endl;
             // Now create the event
             auto locationPair = pImpl->mMigrate.getImageMaximum();
             auto location = pImpl->indexToPoints3D(locationPair.first);
@@ -522,6 +847,8 @@ std::cout << "Origin time: " << originTime << std::endl;
             event.setXPosition(location.x);
             event.setYPosition(location.y);
             event.setZPosition(location.z);
+std::cout << std::setprecision(12);
+std::cout << "Origin time: " << originTime << "(x,y,z)" << location.x << "," << location.y << "," << location.z << std::endl;
             for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
             {
                 Arrival arrival(picksInCluster[ip]);
@@ -544,21 +871,15 @@ std::cout << "Origin time: " << originTime << std::endl;
                     }
                 }
             }
-        }
+        } // Loop on clusters
         // If there were no clusters in the window then iterate.  Otherwise,
         // attempt to process the window event.
         if (nClusters == 0)
         {
             T0 = T1;
         }
-    }
-/*
-    // Sort the picks temporally
-
-    // Perform initial migration
-    pImpl->mMigrate.migrate();
-    // Now cluster
 */
+    }
 }
 
 /// Gets the events

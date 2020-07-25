@@ -11,6 +11,8 @@ public:
     int mPageRankIterations = 20;
     int mTables =-1;
     int mTileSize = 1024;
+    OriginTimeObjectiveFunction mOriginTimeObjectiveFunction 
+        = OriginTimeObjectiveFunction::L1;
     AnalyticCorrelationFunction mAnalyticFunction
         = AnalyticCorrelationFunction::BOXCAR;
 };
@@ -67,6 +69,7 @@ void AssociatorParameters::clear() noexcept
     pImpl->mPageRankIterations = 20;
     pImpl->mTables =-1;
     pImpl->mTileSize = 1024;
+    pImpl->mOriginTimeObjectiveFunction = OriginTimeObjectiveFunction::L1;
     pImpl->mAnalyticFunction = AnalyticCorrelationFunction::BOXCAR;
 }
 
@@ -109,6 +112,19 @@ void AssociatorParameters::setMinimumNumberOfArrivalsToNucleate(
 int AssociatorParameters::getMinimumNumberOfArrivalsToNucleate() const noexcept
 {
     return pImpl->mArrivalsToNucleate;
+}
+
+/// Sets/gets ot objective function
+void AssociatorParameters::setOriginTimeObjectiveFunction(
+    const OriginTimeObjectiveFunction objectiveFunction) noexcept
+{
+    pImpl->mOriginTimeObjectiveFunction = objectiveFunction;
+}
+
+MAssociate::OriginTimeObjectiveFunction
+    AssociatorParameters::getOriginTimeObjectiveFunction() const noexcept
+{
+    return pImpl->mOriginTimeObjectiveFunction;
 }
 
 /// Sets/gets DBSCAN epsilon

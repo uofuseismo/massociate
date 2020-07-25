@@ -25,6 +25,22 @@ enum class AnalyticCorrelationFunction
                   arrival time. */
 };
 /*!
+ * @brief Defines the objective function used in solving for an origin time
+ *        during association. 
+ * @copyright Ben Baker (University of Utah) distributed under the MIT license.
+ * @note This solves the optimization problem of compute an origin time given
+ *       an event location.
+ */
+enum class OriginTimeObjectiveFunction
+{
+    L1, /*! This solves the L1 otimization problem which results in computing
+            a weighted median.  While more robust this is slower than its
+            L2 counterpart. */
+    L2  /*! This solves the L2 (least-sqaures) optimization problem which
+            results in computing a weighted mean.  This is faster than its
+            L1 counterpart but less robust. */
+};
+/*!
  * @brief Defines the travel time field's geometry.
  */
 enum class Geometry

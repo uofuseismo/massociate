@@ -90,8 +90,7 @@ public:
      */
     void setMinimumNumberOfArrivalsToNucleate(int minArrivals);
     /*!
-     *
-     * @return
+     * @return The minimum number of arrivals required to nucleate an event.
      */
     [[nodiscard]] int getMinimumNumberOfArrivalsToNucleate() const noexcept;
 
@@ -105,8 +104,18 @@ public:
      */
     [[nodiscard]] MAssociate::AnalyticCorrelationFunction
         getAnalyticCorrelationFunction() const noexcept;
-    /*! @} */
 
+    /*!
+     * @param[in] objectiveFunction  The objective function used in solving
+     *                               for an origin time.
+     */     
+    void setOriginTimeObjectiveFunction(
+        MAssociate::OriginTimeObjectiveFunction objectiveFunction) noexcept; 
+    /*!
+     * @result The objective function used in solving for an origin time.
+     */
+    MAssociate::OriginTimeObjectiveFunction
+        getOriginTimeObjectiveFunction() const noexcept;
 
     /*! @name DBSCAN Clustering
      * @{
