@@ -150,8 +150,17 @@ public:
     void clearPicks() noexcept;
     /*! @} */
 
+    /*! @name Step 4: Get Events
+     * @{
+     */
     void associate();
 
+    /*! @name Step 5: Release Events
+     * @{
+     */
+    /*!
+     * @result A vector of events.
+     */
     [[nodiscard]] std::vector<MAssociate::Event> getEvents() const;
 private:
     class AssociatorImpl;

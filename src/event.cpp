@@ -19,6 +19,7 @@ public:
     double mX = 0;
     double mY = 0;
     double mZ = 0;
+    int mNumberOfPArrivals =-1;
     bool mHaveIdentifier = false;
     bool mHaveLatitude = false;
     bool mHaveLongitude = false;
@@ -75,6 +76,7 @@ void Event::clear() noexcept
     pImpl->mLongitude = 0;
     pImpl->mDepth = 0;
     pImpl->mOriginTime = 0;
+    pImpl->mNumberOfPArrivals =-1;
     pImpl->mHaveIdentifier = false;
     pImpl->mHaveLatitude = false;
     pImpl->mHaveLongitude = false;
@@ -242,6 +244,7 @@ bool Event::haveIdentifier() const noexcept
 /// Arrivals
 void Event::addArrival(const Arrival &arrival)
 {
+    pImpl->mNumberOfPArrivals =-1;
     if (!arrival.haveTime())
     {
         throw std::invalid_argument("Arrival time not set");
@@ -260,11 +263,11 @@ void Event::addArrival(const Arrival &arrival)
     }
     // Make sure adding this arrival makes sense 
     bool isNew = true;
-    auto nArrival = getNumberOfArrivals();
+    auto nArrivals = getNumberOfArrivals();
     auto newWaveID = arrival.getWaveformIdentifier();
     auto newPhase = arrival.getPhaseName();
     auto newTime = arrival.getTime();
-    for (int i=0; i<getNumberOfArrivals(); ++i)
+    for (int i=0; i<nArrivals; ++i)
     {
         auto waveid = pImpl->mArrivals[i].getWaveformIdentifier();
         auto phase = pImpl->mArrivals[i].getPhaseName();
@@ -310,4 +313,24 @@ void Event::clearArrivals() noexcept
 int Event::getNumberOfArrivals() const noexcept
 {
     return static_cast<int> (pImpl->mArrivals.size());
+}
+
+int Event::getNumberOfPArrivals() const noexcept
+{
+    // Easy case - nothing to do
+    if (getNumberOfArrivals() == 0){return 0;}
+    // If not already computed get the number of P arrivals
+    if (pImpl->mNumberOfPArrivals < 0)
+    {
+        pImpl->mNumberOfPArrivals = 0;
+        for (const auto &arrival : pImpl->mArrivals)
+        {
+            auto phase = arrival.getPhaseName();
+            if (phase == "P")
+            {
+                pImpl->mNumberOfPArrivals = pImpl->mNumberOfPArrivals + 1;
+            }
+        }
+    }
+    return pImpl->mNumberOfPArrivals;
 }

@@ -73,6 +73,7 @@ TEST(MAssociator, Event)
         EXPECT_NO_THROW(event.addArrival(arrival));
     }
     EXPECT_EQ(event.getNumberOfArrivals(), 3);
+    EXPECT_EQ(event.getNumberOfPArrivals(), 2);
 
     // Copy c'tor
     MAssociate::Event eCopy(event);

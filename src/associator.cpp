@@ -66,6 +66,21 @@ std::vector<MAssociate::Pick>
 ///             so that it the `0' cluster is first. 
 ///         (4) Ensures each cluster has a minimum number of picks for
 ///             nucleation.
+/// @param[in] nClusters       The number of clusters found by DBSCAN.
+/// @param[in] minClusterSize  The minimum cluster size (size to nucleate).
+/// @param[in] labels          The cluster labels created by DBSCAN.  Note that
+///                            -1 indicates the pick is not assigned to a
+///                            cluster.
+/// @param[in] contributions   The contribution of each pick to the migration
+///                            image.
+/// @param[in] picks           The picks to causally cluster.
+/// @param[out] newLabels      The new labels for each pick.  Here the 0'th
+///                            group has the largest sum of contributions
+///                            to the migration image max.  The 1'st group
+///                            has the second largest contribution, etc.
+///                            As before, -1 indicates the pick is not assigned
+///                            to a group.
+/// @param[out] nNewClusters   The number of new clusters.
 void makeDBSCANClustersCausal(const int nClusters,
                               const int  minClusterSize,
                               const std::vector<int> &labels,
@@ -144,7 +159,7 @@ void makeDBSCANClustersCausal(const int nClusters,
                             {
                                 if (time1 >= time2) // P arrives after S
                                 {
-std::cout << "fuck1" << std::endl;
+std::cout << "p after s - removing tempLabels" << std::endl;
                                     if (contributions[i] > contributions[j])
                                     {
                                         tempLabels[j] =-1;
@@ -157,7 +172,7 @@ std::cout << "fuck1" << std::endl;
                             }
                             else if (phase1 == "S" && phase2 == "P")
                             {
-std::cout << "fuck2" << std::endl;
+std::cout << "p after s - removing tempLabels 2" << std::endl;
                                 if (time1 <= time2) // S arrives before P
                                 {
                                     if (contributions[i] > contributions[j])
@@ -225,6 +240,25 @@ std::cout << "fuck2" << std::endl;
     }
 }
 
+/*
+/// @brief Attempts to steal picks from other clusters.
+///  
+template<class T>
+void stealPicks(std::vector<MAssociate::Event> *mEvents,
+                const MAssociate::Migrate<T> &migrate)
+{
+    if (mEvents->empty()){return;}
+    auto nEvents = static_cast<int> (mEvents->size());
+    for (int iev=0; iev<nEvents; ++iev)
+    {
+        for (int jev=0; jev<nEvents; ++jev)
+        {
+        }
+    }
+}
+*/
+
+/*
 int createCausalClusterFromContribution(
     const int cluster,
     const std::vector<int> &labels,
@@ -276,7 +310,7 @@ int createCausalClusterFromContribution(
                         {
                             lchecked[j] = true;
                         }
-                   }
+                    }
                 }
             } // End other phases
             newLabels->at(bestIndex) = 0; // Add pick that contributed most
@@ -304,9 +338,12 @@ int createCausalClusterFromContribution(
     }
     return nSubCluster;
 } 
+*/
 
 }
-
+///--------------------------------------------------------------------------///
+///                               Implementation                             ///
+///--------------------------------------------------------------------------///
 template<class T>
 class Associator<T>::AssociatorImpl
 {
@@ -328,19 +365,28 @@ public:
         }
         return result;
     }
+    /// The nucleated events
     std::vector<MAssociate::Event> mEvents;
+    /// The optimal indices in the grid for each event.
+    std::vector<int> mOptimalIndices; 
+    /// The assocation parameters
     MAssociate::AssociatorParameters mParameters;
+    /// The class responsible for migrating differential pick times
     Migrate<T> mMigrate;
+    /// The picks to associate
     std::vector<MAssociate::Pick> mPicks;
-    std::vector<int> mAttemptedAssociations;
-    //std::unique_ptr<MAssociate::Mesh::IMesh<T>> mMesh = nullptr;
+    std::vector<int> mAttemptedAssociations; // TODO is this used?
+    /// The geometry
     std::unique_ptr<MAssociate::Mesh::Spherical::Points3D<T>>
         mSphericalPoints3D = nullptr;
     std::unique_ptr<MAssociate::Mesh::Cartesian::Points3D<T>>
         mCartesianPoints3D = nullptr;
     MAssociate::Geometry mGeometry = MAssociate::Geometry::UNKNOWN;
+    /// Event ID counter
     uint64_t mEventID = 0;
+    /// Max differential travel time in seconds that can be migrated    
     T mMaxDifferentialTime = 0;
+    /// Flag indicating the class is initialized
     bool mInitialized = false;
 };
 
@@ -360,6 +406,7 @@ template<class T>
 void Associator<T>::clear() noexcept
 {
     pImpl->mEvents.clear();
+    pImpl->mOptimalIndices.clear();
     pImpl->mMigrate.clear();
     pImpl->mPicks.clear();
     pImpl->mAttemptedAssociations.clear();
@@ -586,16 +633,25 @@ void Associator<T>::associate()
     auto minArrivalsToNucleate
         = pImpl->mParameters.getMinimumNumberOfArrivalsToNucleate();
     double rootT0 = picks[0].getTime();
+    auto lastPickTime = picks.back().getTime();
+    // Extract picks from window:
+    //    [T0 - 3*maxDT : T0 + maxDT/2 : T0 + 2*maxDT]
     auto T0 = rootT0;
     int nClusters0 =-1; // Number of clusters in previous iteration
-    for (int kwin=0; kwin<nPicks; ++kwin)
+    while (true) //for (int kwin=0; kwin<nPicks; ++kwin)
     {
-        auto T1 = T0 + maxDT*2; // TODO make 2 a factor
+        //auto T1 = T0 + maxDT*2; // TODO make 2 a factor
+        auto maxOriginTime = T0 + 0.5*maxDT; // Don't want events at end of window
+        auto minPickTime = T0 - 3*maxDT;
+        auto maxPickTime = T0 + 2*maxDT;
+        // Quitting time?
+        if (maxOriginTime > lastPickTime){break;}
         // Get the picks in this chunk of time.
-        auto localPicks = getPicksInWindow(picks, T0, T1, true); 
-        if (localPicks.size() < minArrivalsToNucleate) // TODO fix this
+        auto localPicks = getPicksInWindow(picks, minPickTime, maxPickTime, true); 
+        // Insufficient number of picks in window -> advance window
+        if (localPicks.size() < minArrivalsToNucleate)
         {
-            T0 = T1;
+            T0 = maxOriginTime;
             continue;
         }
         // Load the unassociated picks into the migration engine. 
@@ -614,9 +670,9 @@ void Associator<T>::associate()
         for (int ip=0; ip<localPicks.size(); ++ip)
         {
             originTimes[ip] = localPicks[ip].getTime()
-                            - travelTimesToMaximum[ip];  
-std::cout << ip << " " << originTimes[ip] << std::endl;
-        } 
+                            - travelTimesToMaximum[ip];
+            //std::cout << ip << " " << originTimes[ip] << std::endl;
+        }
         // Cluster origin times.  There is no causality here.  It is just an 
         // approximation of how the picks should be distributed.
         DBSCAN dbscan;
@@ -634,67 +690,79 @@ std::cout << ip << " " << originTimes[ip] << std::endl;
         makeDBSCANClustersCausal(nClusters, minArrivalsToNucleate,
                                  labels, contributions, localPicks,
                                  &newLabels, &nNewClusters);
+/*
 for (int ic=0; ic<nNewClusters; ++ic)
 {
 for (int i=0; i<newLabels.size(); ++i)
 {
  if (newLabels[i] == ic)
  {
-     std::cout << ic << " " << picks[i].getIdentifier() << " " << picks[i].getWaveformIdentifier() << " " << picks[i].getPhaseName() << std::endl;
+     std::cout << "newlabels: " << ic << " " << picks[i].getIdentifier() << " " << picks[i].getWaveformIdentifier() << " " << picks[i].getPhaseName() << std::endl;
  } 
 }
 }
+*/
         /// Next let's attempt to associate the largest cluster
-        std::vector<MAssociate::Pick> picksInCluster;
-        pImpl->mMigrate.clearPicks();
-        for (int ip=0; ip<static_cast<int> (labels.size()); ++ip)
+        auto earliestOriginTime = std::numeric_limits<double>::max();
+        for (int ic=0; ic<nNewClusters; ++ic)
         {
-            if (newLabels[ip] == 0)
+            std::vector<MAssociate::Pick> picksInCluster;
+            pImpl->mMigrate.clearPicks();
+            for (int ip=0; ip<static_cast<int> (labels.size()); ++ip)
             {
-                pImpl->mMigrate.addPick(localPicks[ip]); 
-                picksInCluster.push_back(localPicks[ip]);
+                if (newLabels[ip] == ic)
+                {
+                    pImpl->mMigrate.addPick(localPicks[ip]); 
+                    picksInCluster.push_back(localPicks[ip]);
+                }
             }
-        }
-        // Locate this batch of picks and solve for an origin time
-        if (pImpl->mMigrate.getNumberOfPicks() > minArrivalsToNucleate)
-        {
-            // Re-migrate
-            pImpl->mMigrate.migrate();
-            // Get the travel times and location.  Note, this has a correction.
-            travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();
-            // Compute origin time.  For least-squares this is the weighted 
-            // average.  For L1 this is the weighted median. 
-            // average.  Note, the weights are normalized such that they
-            // sum to unity hence we don't divide in a subsequent step
-            std::vector<double> weights
-                = pImpl->mMigrate.getContributionToMaximum(true);
-            std::vector<double> residuals(weights.size(), 0);
-            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
+            // Locate this batch of picks and solve for an origin time
+            if (pImpl->mMigrate.getNumberOfPicks() > minArrivalsToNucleate)
             {
-                std::cout << ip
-                          << "," << picksInCluster[ip].getWaveformIdentifier()
-                          << "," << picksInCluster[ip].getIdentifier()
-                          << "," << picksInCluster[ip].getPhaseName()
-                          << "," << picksInCluster[ip].getTime() << std::endl;
-                // I defined a residual as the observed - predicted time.
-                // Note that the static corrections have already been added
-                // to travelTimesToMaximum. 
-                residuals[ip] = picksInCluster[ip].getTime()
-                              - travelTimesToMaximum[ip]; 
-            }
-            double originTime = 0;
-            if (pImpl->mParameters.getOriginTimeObjectiveFunction() ==
-                MAssociate::OriginTimeObjectiveFunction::L1)
-            {
-                originTime = weightedMedian(residuals.size(),
-                                            residuals.data(), weights.data());
-            }
-            else
-            {
-                originTime = weightedMean(residuals.size(),
-                                          residuals.data(), weights.data());
-            }
-            originTime = originTime + T0; // Add in origin time
+                // Re-migrate
+                pImpl->mMigrate.migrate();
+                // Get the travel times and location.  Note, this has a
+                // static correction.
+                travelTimesToMaximum
+                    =  pImpl->mMigrate.getTravelTimesToMaximum();
+                // Compute origin time.  For least-squares this is the weighted
+                // average.  For L1 this is the weighted median.
+                std::vector<double> weights
+                    = pImpl->mMigrate.getContributionToMaximum(true);
+                std::vector<double> residuals(weights.size(), 0);
+                for (int ip=0; ip<static_cast<int>(picksInCluster.size()); ++ip)
+                {
+                    // I define a residual as the observed - predicted time.
+                    // Note that the static corrections have already been added
+                    // to travelTimesToMaximum. 
+                    residuals[ip] = picksInCluster[ip].getTime()
+                                  - travelTimesToMaximum[ip]; 
+                }
+                double originTime = 0;
+                if (pImpl->mParameters.getOriginTimeObjectiveFunction() ==
+                    MAssociate::OriginTimeObjectiveFunction::L1)
+                {
+                    originTime = weightedMedian(residuals.size(),
+                                                residuals.data(),
+                                                weights.data());
+                }
+                else
+                {
+                    originTime = weightedMean(residuals.size(),
+                                              residuals.data(),
+                                              weights.data());
+                }
+                originTime = originTime + minPickTime; // Add in origin time
+                // If the origin time is too close to the end of the window
+                // then leave the picks as unassociated and continue
+                earliestOriginTime = std::min(earliestOriginTime, originTime);
+
+std::cout << std::setprecision(12);
+                if (originTime > maxOriginTime)
+                {
+                    //std::cout << "skipping: " << maxOriginTime << std::endl;
+                    continue;
+                }
 /*
             double originTime = 0;
             for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
@@ -713,49 +781,55 @@ std::cout << "residual " << dt << std::endl;
                 originTime = originTime + weights[ip]*dt;
             }
 */
-std::cout << "ot and t0: " << originTime << " " << T0 << std::endl;
 //            originTime = originTime + T0; // Add in pick shift
-            // Now create the event
-            auto locationPair = pImpl->mMigrate.getImageMaximum();
-            auto location = pImpl->indexToPoints3D(locationPair.first);
-            MAssociate::Event event;
-            event.setOriginTime(originTime);
-            event.setXPosition(location.x);
-            event.setYPosition(location.y);
-            event.setZPosition(location.z);
-std::cout << std::setprecision(12);
+                // Now create the event
+                auto locationPair = pImpl->mMigrate.getImageMaximum();
+                auto location = pImpl->indexToPoints3D(locationPair.first);
+                MAssociate::Event event;
+                event.setOriginTime(originTime);
+                event.setXPosition(location.x);
+                event.setYPosition(location.y);
+                event.setZPosition(location.z);
 std::cout << "Origin time: " << originTime << "(x,y,z)" << location.x << "," << location.y << "," << location.z << std::endl;
-            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
-            {
-                Arrival arrival(picksInCluster[ip]);
-                arrival.setTravelTime(travelTimesToMaximum[ip]
-                                    - arrival.getStaticCorrection());
-                event.addArrival(arrival);
-            }
-            pImpl->mEventID = pImpl->mEventID + 1;
-            event.setIdentifier(pImpl->mEventID);
-            pImpl->mEvents.push_back(event);
-        }
-        // Remove the picks in this cluster
-        for (const auto &pickToRemove : picksInCluster)
-        {
-            int ip = 0;
-            for (auto &p : picks)
-            {
-                if (p.getIdentifier() == pickToRemove.getIdentifier())
+                for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
                 {
-                    picks.erase(picks.begin() + ip);
-                    break;
+                    std::cout << ip
+                              << "," << picksInCluster[ip].getWaveformIdentifier()
+                              << "," << picksInCluster[ip].getIdentifier()
+                              << "," << picksInCluster[ip].getPhaseName()
+                              << "," << picksInCluster[ip].getTime() << std::endl;
+
+                    Arrival arrival(picksInCluster[ip]);
+                    arrival.setTime(arrival.getTime() + minPickTime);
+                    arrival.setTravelTime(travelTimesToMaximum[ip]
+                                        - arrival.getStaticCorrection());
+                    event.addArrival(arrival);
                 }
-                ip = ip + 1;
+                pImpl->mEventID = pImpl->mEventID + 1;
+                event.setIdentifier(pImpl->mEventID);
+                pImpl->mEvents.push_back(event);
+                pImpl->mOptimalIndices.push_back(locationPair.first);
             }
-        }
+            // Remove the picks in this cluster
+            for (const auto &pickToRemove : picksInCluster)
+            {
+                int ip = 0;
+                for (auto &p : picks)
+                {
+                    if (p.getIdentifier() == pickToRemove.getIdentifier())
+                    {
+                        picks.erase(picks.begin() + ip);
+                        break;
+                    }
+                    ip = ip + 1;
+                }
+            }
+        } // Loop
         // Update the time window
-        if (nNewClusters == 0)
+        if (nNewClusters == 0 || maxOriginTime <= earliestOriginTime)
         {
-            T0 = T1;
+            T0 = maxOriginTime;
         }
-getchar();
 /*
         // This loop will attempt to refine the above clusters in a 
         // causal fashion.  Effectively, this loop looks to assign

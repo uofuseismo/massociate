@@ -225,6 +225,10 @@ public:
      * @result The number of arrivals corresponding to this event.
      */
     [[nodiscard]] int getNumberOfArrivals() const noexcept;
+    /*!
+     * @result The number of arrivals with phase name "P".
+     */
+    [[nodiscard]] int getNumberOfPArrivals() const noexcept;
     /*! @} */
 private:
     class EventImpl;
