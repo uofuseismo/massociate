@@ -635,17 +635,21 @@ void Associator<T>::associate()
     double rootT0 = picks[0].getTime();
     auto lastPickTime = picks.back().getTime();
     // Extract picks from window:
-    //    [T0 - 3*maxDT : T0 + maxDT/2 : T0 + 2*maxDT]
+    //    [T0 - 3*maxDT : T0 + maxDT : T0 + 2.2*maxDT]
     auto T0 = rootT0;
     int nClusters0 =-1; // Number of clusters in previous iteration
     while (true) //for (int kwin=0; kwin<nPicks; ++kwin)
     {
         //auto T1 = T0 + maxDT*2; // TODO make 2 a factor
-        auto maxOriginTime = T0 + 0.5*maxDT; // Don't want events at end of window
+        // There's a bit of a tradeoff here.  If we grab too many irrelavant
+        // picks then our migration image will be corrupted and it will make
+        // the greedy algorithm's job more difficult.  However, if the window
+        // is too tight then we potentially miss relevant picks.
+        auto maxOriginTime = T0 + maxDT; // Don't want events at end of window
         auto minPickTime = T0 - 3*maxDT;
-        auto maxPickTime = T0 + 2*maxDT;
+        auto maxPickTime = T0 + 2*maxDT + 0.5; // 0.5 is like max noise on pick
         // Quitting time?
-        if (maxOriginTime > lastPickTime){break;}
+        if (maxOriginTime > lastPickTime + 2*maxDT){break;}
         // Get the picks in this chunk of time.
         auto localPicks = getPicksInWindow(picks, minPickTime, maxPickTime, true); 
         // Insufficient number of picks in window -> advance window
