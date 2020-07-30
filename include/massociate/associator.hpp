@@ -150,18 +150,35 @@ public:
     void clearPicks() noexcept;
     /*! @} */
 
-    /*! @name Step 4: Get Events
+    /*! @name Step 4: Create Events
      * @{
      */
     void associate();
+    /*!
+     * @brief This will scan through the available events created by calling
+     *        \c associate() and attempt to bind a pick to an appropriate event.
+     * @param[in] pick   The pick to attempt to bind to an event.
+     * @throws std::invalid_argument if the pick does not have a time, phase,
+     *         waveform identifier, pick ID, or corresponding travel time table.
+     * @throws std::runtime_error if \c isInitialized() is false.
+     * @note This is useful for when you have a very noisy station that isn't
+     *       appropriate for association but still may offer useful information
+     *       to the locator.
+     */
+    void bindPickToEvent(const MAssociate::Pick &pick);
+    /*! @} */
 
-    /*! @name Step 5: Release Events
+    /*! @name Step 5: Get Events
      * @{
      */
     /*!
      * @result A vector of events.
      */
     [[nodiscard]] std::vector<MAssociate::Event> getEvents() const;
+    /*!
+     * @result The number of events in the associator.
+     */
+    [[nodiscard]] int getNumberOfEvents() const noexcept;
 private:
     class AssociatorImpl;
     std::unique_ptr<AssociatorImpl> pImpl;

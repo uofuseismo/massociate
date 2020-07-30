@@ -218,6 +218,27 @@ public:
      */
     [[nodiscard]] std::vector<Arrival> getArrivals() const;
     /*!
+     * @result True indicates that the arrival exists.
+     */
+    [[nodiscard]] bool haveArrival(uint64_t arrivalIdentifier) const noexcept;
+    /*!
+     * @param[in] arrival  The arrival to determine if it can be added.
+     *                     To be eligible to be added the arrival must
+     *                     satisfy causality constraints.
+     * @param[in] overWriteIfExists  If true then if the arrival exists then
+     *                               it can be overridden.  Otherwise, if the
+     *                               arrival exists this will return -1.
+     * @result A negative number indicates the arrival cannot be added.
+     *         A non-negative number indicates the arrival can be added at
+     *         the specified index.  If this equals nArrivals then this 
+     *         indicates that the arrival does not exist but can be added
+     *         at the end of the arrival list. 
+     * @throws std::invalid_argument if arrival waveform identifier, phase name,
+     *         arrival time, and arrival identifier.
+     */
+    [[nodiscard]] int canAddArrival(const Arrival &arrival,
+                                    bool overWriteIfExists) const noexcept;
+    /*!
      * @brief Clears all the arrivals from the class.
      */
     void clearArrivals() noexcept;

@@ -50,20 +50,20 @@ TEST(MAssociator, Event)
     waveid.setChannel("ENZ");
     waveid.setLocationCode("00");
     arrival.setIdentifier(0);
-    arrival.setTime(4);
+    arrival.setTime(originTime + 4);
     arrival.setWaveformIdentifier(waveid);
     arrival.setPhaseName("P");
     arrivals.push_back(arrival);
  
     waveid.setStation("VEC");
-    arrival.setTime(8);
+    arrival.setTime(originTime + 8);
     arrival.setWaveformIdentifier(waveid);
     arrival.setPhaseName("S");
     arrival.setIdentifier(1);
     arrivals.push_back(arrival);
 
     waveid.setStation("COY");
-    arrival.setTime(6);
+    arrival.setTime(originTime + 6);
     arrival.setWaveformIdentifier(waveid);
     arrival.setPhaseName("P");
     arrival.setIdentifier(2);
@@ -74,6 +74,11 @@ TEST(MAssociator, Event)
     }
     EXPECT_EQ(event.getNumberOfArrivals(), 3);
     EXPECT_EQ(event.getNumberOfPArrivals(), 2);
+    // Make some arrivals we can't add
+    auto badArrivals = arrivals;
+    badArrivals[0].setTime(originTime - 1); // Arrival before origin time
+    badArrivals[1].setPhaseName("P"); // P at S
+    badArrivals[2].setPhaseName("S"); // S at P
 
     // Copy c'tor
     MAssociate::Event eCopy(event);
@@ -92,6 +97,9 @@ TEST(MAssociator, Event)
                   arrivals[ia].getWaveformIdentifier());
         EXPECT_EQ(arrivalsBack[ia].getPhaseName(), arrivals[ia].getPhaseName());
         EXPECT_NEAR(arrivalsBack[ia].getTime(), arrivals[ia].getTime(), 1.e-14);
+        EXPECT_TRUE(eCopy.canAddArrival(arrivals[ia], true) >= 0);
+        EXPECT_TRUE(eCopy.canAddArrival(arrivals[ia], false) < 0);
+        EXPECT_TRUE(eCopy.canAddArrival(badArrivals[ia], true) < 0);
     }
     event.clearArrivals();
     EXPECT_EQ(event.getNumberOfArrivals(), 0);

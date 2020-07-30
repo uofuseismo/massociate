@@ -262,11 +262,44 @@ void Event::addArrival(const Arrival &arrival)
         throw std::invalid_argument("Arrival identifier not set");
     }
     // Make sure adding this arrival makes sense 
-    bool isNew = true;
     auto nArrivals = getNumberOfArrivals();
+    auto index = canAddArrival(arrival, true);
+    if (index < 0)
+    {
+        if (index ==-1){return;}
+        if (index ==-2)
+        {
+            throw std::invalid_argument("P can't arrive after S");
+        }
+        throw std::invalid_argument("S can't arrive before P");
+    }
+    if (index < nArrivals)
+    {
+        std::cerr << "Overwriting arrival" << std::endl;
+        pImpl->mArrivals[index] = arrival;
+        return;
+    }
+    pImpl->mArrivals.push_back(arrival);
+}
+
+int Event::canAddArrival(const Arrival &arrival,
+                         const bool overwriteIfExists) const noexcept
+{
+    if (!arrival.haveTime()){return -1;}
+    if (!arrival.haveWaveformIdentifier()){return -1;}
+    if (!arrival.havePhaseName()){return -1;}
+    if (!arrival.haveIdentifier()){return -1;}
+    // Arrival can't come in before origin time
+    auto newTime = arrival.getTime();
+    if (haveOriginTime())
+    {
+        if (newTime < getOriginTime()){return -1;} 
+    }
+    // Get the other arrival information 
+    auto nArrivals = getNumberOfArrivals();
+    if (nArrivals == 0){return nArrivals;}
     auto newWaveID = arrival.getWaveformIdentifier();
     auto newPhase = arrival.getPhaseName();
-    auto newTime = arrival.getTime();
     for (int i=0; i<nArrivals; ++i)
     {
         auto waveid = pImpl->mArrivals[i].getWaveformIdentifier();
@@ -276,28 +309,20 @@ void Event::addArrival(const Arrival &arrival)
         {
             if (newPhase == phase)
             {
-                std::cerr << "Overwriting arrival" << std::endl;
-                pImpl->mArrivals[i] = arrival;
-                isNew = false;
-                break;
+                if (overwriteIfExists){return i;}
+                return -1;
             }
             if (newPhase == "P" && phase == "S")
             {
-                if (newTime >= time)
-                {
-                    throw std::invalid_argument("P can't arrive after S");
-                }
+                if (newTime >= time){return -2;}
             }
             if (newPhase == "S" && phase == "P")
             {
-                if (newTime < time)
-                {
-                    throw std::invalid_argument("S can't arrive before P");
-                }
+                if (newTime <= time){return -3;}
            }
         }
     }
-    if (isNew){pImpl->mArrivals.push_back(arrival);}
+    return nArrivals;
 }
 
 std::vector<Arrival> Event::getArrivals() const
@@ -333,4 +358,14 @@ int Event::getNumberOfPArrivals() const noexcept
         }
     }
     return pImpl->mNumberOfPArrivals;
+}
+
+bool Event::haveArrival(const uint64_t arrivalIdentifier) const noexcept
+{
+    auto result = false;
+    for (const auto &arrival : pImpl->mArrivals)
+    {
+        if (arrival.getIdentifier() == arrivalIdentifier){return true;}
+    }
+    return result;
 }

@@ -6,6 +6,7 @@
 #include "massociate/associator.hpp"
 #include "massociate/mesh/cartesian/points3d.hpp"
 #include "massociate/arrival.hpp"
+#include "massociate/event.hpp"
 #include "massociate/pick.hpp"
 #include "massociate/waveformIdentifier.hpp"
 #include "private/weightedStatistics.hpp"
@@ -241,6 +242,17 @@ TEST(MAssociate, Associator)
     std::vector<double> ySources({2000, 6000, 6000});
     std::vector<double> zSources({5000
 */
+    // Check the associations
+    EXPECT_EQ(associator.getNumberOfEvents(), 3);
+    auto events = associator.getEvents();
+    std::sort(events.begin(), events.end(), 
+              [](const MAssociate::Event &a, const MAssociate::Event &b)
+              {
+                 return a.getOriginTime() < b.getOriginTime();
+              });
+    for (const auto &event : events)
+    {
+    }
 }
 
 }

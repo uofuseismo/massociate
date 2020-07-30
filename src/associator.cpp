@@ -375,7 +375,10 @@ public:
     Migrate<T> mMigrate;
     /// The picks to associate
     std::vector<MAssociate::Pick> mPicks;
-    std::vector<int> mAttemptedAssociations; // TODO is this used?
+    /// Setting a lot of picks can be very time consuming because I check for
+    /// repeat pick IDs.  This speeds up that activity.
+    std::vector<uint64_t> mPickIDs;
+    //std::vector<int> mAttemptedAssociations; // TODO is this used?
     /// The geometry
     std::unique_ptr<MAssociate::Mesh::Spherical::Points3D<T>>
         mSphericalPoints3D = nullptr;
@@ -409,7 +412,8 @@ void Associator<T>::clear() noexcept
     pImpl->mOptimalIndices.clear();
     pImpl->mMigrate.clear();
     pImpl->mPicks.clear();
-    pImpl->mAttemptedAssociations.clear();
+    pImpl->mPickIDs.clear();
+    //pImpl->mAttemptedAssociations.clear();
     if (pImpl->mSphericalPoints3D)
     {
         pImpl->mSphericalPoints3D->clear();
@@ -551,6 +555,55 @@ T Associator<T>::getMaximumDifferentialTravelTime() const noexcept
     return pImpl->mMaxDifferentialTime;
 }
 
+/// Picks to bind
+template<class T>
+void Associator<T>::bindPickToEvent(const Pick &pick)
+{
+    if (!isInitialized()){throw std::runtime_error("Class not initialized");}
+    if (!pick.haveTime())
+    {
+        throw std::invalid_argument("time not set");
+    }
+    if (!pick.haveIdentifier())
+    {
+        throw std::invalid_argument("pick id not set");
+    }
+    // Nothing to do
+    auto nEvents = getNumberOfEvents();
+    if (nEvents < 1){return;}
+    // If the migration engine doesn't have the table then quit early
+    auto sncl = pick.getWaveformIdentifier();
+    auto network = sncl.getNetwork();
+    auto station = sncl.getStation();
+    auto phase = pick.getPhaseName();
+    auto pickID = pick.getIdentifier();
+    if (!pImpl->mMigrate.haveTravelTimeTable(network, station, phase))
+    {
+        throw std::runtime_error("No travel time table for " + network
+                               + "." + station + "." + phase);
+    }
+    // Find best fitting event
+    MAssociate::Arrival arrival(pick);
+    auto resMin = std::numeric_limits<double>::max();
+    int eventIndex =-1;
+    for (int iev=0; iev<nEvents; ++iev)
+    {
+        // Arrival already exists - don't add
+        if (pImpl->mEvents[iev].haveArrival(pickID)){continue;}
+        const bool overWriteIfExists = false;
+        if (pImpl->mEvents[iev].canAddArrival(arrival, overWriteIfExists))
+        {
+            continue;
+        }
+        auto ot = pImpl->mEvents[iev].getOriginTime();
+        auto idx = pImpl->mOptimalIndices[iev];
+        auto tEst = ot
+                  + pImpl->mMigrate.getTravelTime(network, station, phase,
+                                                  idx);
+         
+    } 
+}
+
 /// Picks
 template<class T>
 void Associator<T>::addPick(const Pick &newPick)
@@ -568,7 +621,12 @@ void Associator<T>::addPick(const Pick &newPick)
     {
         throw std::invalid_argument("pick id not set");
     }
-    // If the table doesn't have a table then quit early
+    if (pImpl->mPicks.capacity() == 0)
+    {
+        pImpl->mPicks.reserve(8192);
+        pImpl->mPickIDs.reserve(8192);
+    }
+    // If the migration doesn't have the table then quit early
     auto newSNCL = newPick.getWaveformIdentifier();
     auto networkNew = newSNCL.getNetwork();
     auto stationNew = newSNCL.getStation();
@@ -581,8 +639,21 @@ void Associator<T>::addPick(const Pick &newPick)
                                + "." + stationNew + "." + phaseNew);
     }
     // Look for this pick
-    bool isNew = true;
     auto pickID = newPick.getIdentifier();
+    auto it = std::find(pImpl->mPickIDs.begin(), pImpl->mPickIDs.end(), pickID);
+    if (it == pImpl->mPickIDs.end())
+    {
+        pImpl->mPicks.push_back(newPick);
+        pImpl->mPickIDs.push_back(pickID);
+    }
+    else
+    {
+        std::cerr << "Pick already exists - overwriting" << std::endl;
+        auto ia = std::distance(pImpl->mPickIDs.begin(), it);
+        pImpl->mPicks[ia] = newPick;
+    }
+/*
+    bool isNew = true;
     int ia = 0;
     for (const auto &pick : pImpl->mPicks)
     {
@@ -591,14 +662,16 @@ void Associator<T>::addPick(const Pick &newPick)
             std::cerr << "Pick already exists - overwriting" << std::endl;
             pImpl->mPicks[ia] = newPick;
             isNew = false;
+            break;
         }
         ia = ia + 1;
     }
     if (isNew)
     {
         pImpl->mPicks.push_back(newPick);
-        pImpl->mAttemptedAssociations.push_back(0);
+        //pImpl->mPickIDs.push_back(pickID);
     }
+*/
 }
 
 template<class T>
@@ -637,7 +710,7 @@ void Associator<T>::associate()
     // Extract picks from window:
     //    [T0 - 3*maxDT : T0 + maxDT : T0 + 2.2*maxDT]
     auto T0 = rootT0;
-    int nClusters0 =-1; // Number of clusters in previous iteration
+    //int nClusters0 =-1; // Number of clusters in previous iteration
     while (true) //for (int kwin=0; kwin<nPicks; ++kwin)
     {
         //auto T1 = T0 + maxDT*2; // TODO make 2 a factor
@@ -646,7 +719,7 @@ void Associator<T>::associate()
         // the greedy algorithm's job more difficult.  However, if the window
         // is too tight then we potentially miss relevant picks.
         auto maxOriginTime = T0 + maxDT; // Don't want events at end of window
-        auto minPickTime = T0 - 3*maxDT;
+        auto minPickTime = T0 - 2*maxDT;
         auto maxPickTime = T0 + 2*maxDT + 0.5; // 0.5 is like max noise on pick
         // Quitting time?
         if (maxOriginTime > lastPickTime + 2*maxDT){break;}
@@ -965,6 +1038,13 @@ template<class T>
 std::vector<MAssociate::Event> Associator<T>::getEvents() const
 {
     return pImpl->mEvents;
+}
+
+/// Gets the number of events
+template<class T>
+int Associator<T>::getNumberOfEvents() const noexcept
+{
+    return static_cast<int> (pImpl->mEvents.size());
 }
 
 ///--------------------------------------------------------------------------///
