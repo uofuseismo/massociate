@@ -4,7 +4,7 @@ This is an example of associating data from the 2020 Magna, Utah 5.7 aftershock 
 
 ## Step 1: Travel Time Tables
 
-To begin we must generate travel time tables.  For simplicitly we will use a  1D model and the travel time calculator from [GrowClust](https://github.com/interseismic/PhaseLink/blob/master/raytracer.tar.gz).
+To begin we must generate travel time tables.  For simplicitly we will use a  1D model and the travel time calculator from [GrowClust](https://github.com/interseismic/PhaseLink/blob/master/raytracer.tar.gz).  Since I do not know the licensing it will be up to you to download, compile, and make an executable named make\_TTable.
 
 The velocity model in wasatch.txt is used by the UUSS for events in the Wasatch Front.  The file is defined by depth (km), Vp (km/s), Vs (km/s) tuples
 
