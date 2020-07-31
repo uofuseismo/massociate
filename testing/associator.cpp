@@ -253,6 +253,11 @@ TEST(MAssociate, Associator)
     for (const auto &event : events)
     {
     }
+    // Test clear
+    associator.clearPicks();
+    EXPECT_EQ(associator.getNumberOfPicks(), 0);
+    associator.clearEvents();    
+    EXPECT_EQ(associator.getNumberOfEvents(), 0);
 }
 
 }
