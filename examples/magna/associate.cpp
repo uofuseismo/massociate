@@ -15,6 +15,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <sff/utilities/time.hpp>
+#include "hypoStation.hpp"
 #include "blackList.hpp"
 #include "h5io.hpp"
 
@@ -286,6 +287,19 @@ struct PickList
         std::cout << "Number of picks: "
                   << std::to_string(picks.size()) << std::endl;
     }
+    void setStatics(const HypoStation &corrections)
+    {
+        for (int ip=0; ip<static_cast<int> (picks.size()); ++ip)
+        {
+            auto phase = picks[ip].getPhaseName();
+            auto waveid = picks[ip].getWaveformIdentifier();
+            auto network = waveid.getNetwork();
+            auto station = waveid.getStation();
+            auto corr = corrections.getCorrection(network, station, phase);
+//std::cout << "P " << corr << " " << station << std::endl;
+            if (corr != 0){picks[ip].setStaticCorrection(corr);} 
+        }
+    }
     void setPStatics(const StaticCorrections &corrections)
     {
         for (int ip=0; ip<static_cast<int> (picks.size()); ++ip)
@@ -324,25 +338,23 @@ int main()
     std::string travelTimeTableName = "../magna/travelTimeTables.h5";
     //std::string pickFile = "../magna/mainshock.txt";
     //std::string pickFile = "../magna/split_event.txt";
-    std::string pickFile = "../magna/associated_picks.txt";
+    //std::string pickFile = "../magna/associated_picks.txt";
+    int nDays = 3; // 44
     std::string pStaticsFile = "/Users/bbaker/trainMagna/p_statics.csv";
     std::string sStaticsFile = "/Users/bbaker/trainMagna/s_statics.csv";
+    //std::string hypoStationFile = "../magna/locate/magna.sta"; 
+    std::string hypoStationFile = "../magna/locate/magna.updated.sta"; // re-optimized statics
     int dbscanMinClusterSize = 8; // No causality so err on the larger side
     int minNumberOfPArrivals = 2;
     double dbscanEpsilon = 0.35; // (seconds)
     // Load the static corrections
     std::cout << "Loading statics..." << std::endl;
-    StaticCorrections pStatics;
-    StaticCorrections sStatics;
-    pStatics.read(pStaticsFile);
-    sStatics.read(sStaticsFile);
-    // Load the picks
-    std::cout << "Loading picks..." << std::endl;
-    PickList picks;
-    picks.read(pickFile, true);
-    std::cout << "Attaching static corrections to arrivals..." << std::endl;
-    picks.setPStatics(pStatics);
-    picks.setSStatics(sStatics);
+    //StaticCorrections pStatics;
+    //StaticCorrections sStatics;
+    //pStatics.read(pStaticsFile);
+    //sStatics.read(sStaticsFile);
+    HypoStation stations;
+    stations.read(hypoStationFile);
     // Create the associator parameters
     MAssociate::AssociatorParameters parameters; 
     parameters.setAnalyticCorrelationFunction(
@@ -374,56 +386,77 @@ int main()
                                       ttimes.size(), ttimes.data());
     }
     h5io.close();
-    // Attach the picks to the associator
-    std::cout << "Setting picks..." << std::endl; 
-    for (const auto &pick : picks.picks)
+    // Load the picks
+    for (int iday=0; iday<nDays; ++iday)
     {
-        associator.addPick(pick); 
-    }
-    // Associate (this takes awhile)
-    std::cout << "Associating..." << std::endl;
-    associator.associate();
-  
-    // Get the events 
-    auto events = associator.getEvents();
-    // Put them in increasing order of origin time
-    std::sort(events.begin(), events.end(),
-              [](const MAssociate::Event &a, const MAssociate::Event &b)
-              {
-                  return a.getOriginTime() < b.getOriginTime();
-              });
-    std::setprecision(6);
-    std::ofstream arrivalFile("../magna/prelimArrivals.csv");
-    std::ofstream catalogFile("..//magna/prelimLocs.csv");
-    arrivalFile << "evid,network,station,channel,location_code,phase,arrival_time,first_motion,origin_time,event_latitude,event_longitude,event_depth" << std::endl;
-    for (const auto &event : events)
-    {
-        if (event.getNumberOfPArrivals() < minNumberOfPArrivals){continue;}
-        SFF::Utilities::Time ot(event.getOriginTime());
-        auto lon = event.getXPosition();
-        auto lat = event.getYPosition();
-        auto depth = event.getZPosition();
-        //std::cout << ot << "," << lat << "," << lon << "," << depth << std::endl;
-        auto arrivals = event.getArrivals();
-        for (const auto &arrival : arrivals)
+        // Load the picks
+        std::string pickFile = "../magna/associated_picks."
+                             + std::to_string(iday+1) + ".txt";
+        std::cout << "Loading picks..." << std::endl;
+        PickList picks;
+        picks.read(pickFile, true);
+        std::cout << "Attaching static corrections to arrivals..." << std::endl;
+        picks.setStatics(stations);
+        //picks.setPStatics(pStatics);
+        //picks.setSStatics(sStatics);
+
+        associator.clearPicks();
+        associator.clearEvents();
+        // Attach the picks to the associator
+        std::cout << "Setting picks..." << std::endl; 
+        for (const auto &pick : picks.picks)
         {
-            auto evid = event.getIdentifier();
-            SFF::Utilities::Time arrivalTime(arrival.getTime());
-            auto fm = static_cast<int> (arrival.getPolarity());
-            auto waveid = arrival.getWaveformIdentifier();
-            auto channel = waveid.getChannel();
-            if (arrival.getPhaseName() == "S"){channel[2] = 'N';}
-            arrivalFile << evid << ","
-                        << waveid.getNetwork() << ","
-                        << waveid.getStation() << ","
-                        << channel << ","
-                        << waveid.getLocationCode() << ","
-                        << arrival.getPhaseName() << ","
-                        << arrivalTime << "," << fm << "," 
-                        << ot << "," << lat << "," << lon << "," << depth << std::endl; 
+            associator.addPick(pick); 
         }
-        catalogFile << ot << "," << lat << "," << lon << "," << depth << std::endl;
-    }
-    arrivalFile.close();
-    catalogFile.close();
+        // Associate (this takes awhile)
+        std::cout << "Associating..." << std::endl;
+        associator.associate();
+  
+        // Get the events 
+        auto events = associator.getEvents();
+        // Put them in increasing order of origin time
+        std::sort(events.begin(), events.end(),
+                  [](const MAssociate::Event &a, const MAssociate::Event &b)
+                  {
+                      return a.getOriginTime() < b.getOriginTime();
+                  });
+        std::setprecision(6);
+        std::string arrivalFileName = "../magna/prelimArrivals."
+                                    + std::to_string(iday+1) + ".csv";
+        std::string catalogFileName = "../magna/prelimLocs."
+                                    + std::to_string(iday+1) + ".csv";
+        std::ofstream arrivalFile(arrivalFileName); //"../magna/prelimArrivals.csv");
+        std::ofstream catalogFile(catalogFileName); //"..//magna/prelimLocs.csv");
+        arrivalFile << "evid,network,station,channel,location_code,phase,arrival_time,first_motion,origin_time,event_latitude,event_longitude,event_depth" << std::endl;
+        for (const auto &event : events)
+        {
+            //if (event.getNumberOfPArrivals() < minNumberOfPArrivals){continue;}
+            SFF::Utilities::Time ot(event.getOriginTime());
+            auto lon = event.getXPosition();
+            auto lat = event.getYPosition();
+            auto depth = event.getZPosition();
+            //std::cout << ot << "," << lat << "," << lon << "," << depth << std::endl;
+            auto arrivals = event.getArrivals();
+            for (const auto &arrival : arrivals)
+            {
+                auto evid = event.getIdentifier();
+                SFF::Utilities::Time arrivalTime(arrival.getTime());
+                auto fm = static_cast<int> (arrival.getPolarity());
+                auto waveid = arrival.getWaveformIdentifier();
+                auto channel = waveid.getChannel();
+                if (arrival.getPhaseName() == "S"){channel[2] = 'N';}
+                arrivalFile << evid << ","
+                            << waveid.getNetwork() << ","
+                            << waveid.getStation() << ","
+                            << channel << ","
+                            << waveid.getLocationCode() << ","
+                            << arrival.getPhaseName() << ","
+                            << arrivalTime << "," << fm << "," 
+                            << ot << "," << lat << "," << lon << "," << depth << std::endl; 
+            }
+            catalogFile << ot << "," << lat << "," << lon << "," << depth << std::endl;
+        }
+        arrivalFile.close();
+        catalogFile.close();
+    } // Loop on days
 }
