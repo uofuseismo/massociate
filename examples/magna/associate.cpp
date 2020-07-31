@@ -421,8 +421,10 @@ int main()
                       return a.getOriginTime() < b.getOriginTime();
                   });
         std::setprecision(6);
-        std::string arrivalFileName = "../magna/prelimArrivals." + std::to_string(iday) + ".csv";
-        std::string catalogFileName = "../magna/prelimLocs." + std::to_string(iday) + ".csv";
+        std::string arrivalFileName = "../magna/prelimArrivals."
+                                    + std::to_string(iday+1) + ".csv";
+        std::string catalogFileName = "../magna/prelimLocs."
+                                    + std::to_string(iday+1) + ".csv";
         std::ofstream arrivalFile(arrivalFileName); //"../magna/prelimArrivals.csv");
         std::ofstream catalogFile(catalogFileName); //"..//magna/prelimLocs.csv");
         arrivalFile << "evid,network,station,channel,location_code,phase,arrival_time,first_motion,origin_time,event_latitude,event_longitude,event_depth" << std::endl;
