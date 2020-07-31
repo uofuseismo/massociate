@@ -674,6 +674,16 @@ void Associator<T>::addPick(const Pick &newPick)
 */
 }
 
+/// Clear the picks
+template<class T>
+void Associator<T>::clearPicks() noexcept
+{
+    pImpl->mPicks.clear();
+    pImpl->mPickIDs.clear();
+    
+}
+
+/// Gets the number of picks
 template<class T>
 int Associator<T>::getNumberOfPicks() const noexcept
 {
@@ -1038,6 +1048,14 @@ template<class T>
 std::vector<MAssociate::Event> Associator<T>::getEvents() const
 {
     return pImpl->mEvents;
+}
+
+/// Clears out the events
+template<class T>
+void Associator<T>::clearEvents(const bool resetEventCounter) noexcept
+{
+    pImpl->mEvents.clear();
+    if (resetEventCounter){pImpl->mEventID = 0;}
 }
 
 /// Gets the number of events

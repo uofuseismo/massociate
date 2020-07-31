@@ -176,6 +176,15 @@ public:
      */
     [[nodiscard]] std::vector<MAssociate::Event> getEvents() const;
     /*!
+     * @brief Clears the events.  This is useful for when you want to release
+     *        memory on old events.
+     * @param[in] resetCounter  If true then the event ID counter will be reset.
+     *                          This behavior is not typically recommended. 
+     * @note Call \c getEvents() prior to calling this otherwise you will lose
+     *       your events.
+     */
+    void clearEvents(bool resetCounter = false) noexcept;
+    /*!
      * @result The number of events in the associator.
      */
     [[nodiscard]] int getNumberOfEvents() const noexcept;
