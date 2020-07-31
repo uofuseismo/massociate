@@ -14,6 +14,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string.hpp>
 #include "bilinearInterpolation.hpp"
+#include "hypoStation.hpp"
 #include "h5io.hpp"
 #include "blackList.hpp"
 
@@ -345,10 +346,15 @@ int main()
 {
     struct TravelTimeInterpolator pTimes;
     struct TravelTimeInterpolator sTimes;
+/*
     auto receivers = getReceiverListFromCSV("../magna/magna_3c_stations.csv", true);
     auto nodes = getReceiverListFromNodalFile("../magna/Magna-Locs_2020-SN.txt");
     receivers.insert(std::end(receivers), std::begin(nodes), std::end(nodes));
-    std::cout << "Total number of receivers: " << receivers.size() << std::endl;
+*/
+    HypoStation stations;
+    stations.read("../magna/locate/magna.sta");
+    std::cout << "Total number of receivers: " << stations.networks.size() << std::endl;
+//    std::cout << "Total number of receivers: " << receivers.size() << std::endl;
     createGrowClustTravelTimeTable("../magna/TT.wasatch.pg", "P", &pTimes);
     createGrowClustTravelTimeTable("../magna/TT.wasatch.sg", "S", &sTimes);
     std::vector<double> lons, lats, depths, distances;
@@ -358,6 +364,38 @@ int main()
     h5io.setGeometry(lats.size(), lats.data(), lons.data(), depths.data());
 std::ofstream locFile("locations.txt");
 std::ofstream staFile("stations.txt");
+
+    for (int irec=0; irec<static_cast<int> (stations.networks.size()); ++irec)
+    {
+        computeDistances(stations.latitudes[irec], stations.longitudes[irec],
+                         lats, lons, &distances);
+        auto dmax = std::max_element(distances.begin(), distances.end());
+        auto pTravelTimes = pTimes.getTimes(distances, depths);
+        auto sTravelTimes = sTimes.getTimes(distances, depths);
+        auto pmax = std::max_element(pTravelTimes.begin(), pTravelTimes.end());
+        auto smax = std::max_element(sTravelTimes.begin(), sTravelTimes.end());
+        if (irec == 0)
+        {
+           for (int j=0; j<static_cast<int> (lats.size()); ++j)
+           {
+               locFile << lons[j] << " " << lats[j] << " " << distances[j]
+                       << " " << pTravelTimes[j] << std::endl;
+           }
+        }
+        staFile << stations.longitudes[irec] << " " << stations.latitudes[irec] << std::endl;
+       std::cout << stations.stations[irec] << " " << stations.latitudes[irec] << " " 
+                 << stations.longitudes[irec]
+                 << " " << *dmax << " " << *pmax << " " << *smax << std::endl;
+        h5io.addTravelTimeTable(stations.networks[irec],
+                                stations.stations[irec],
+                                "P",
+                                pTravelTimes.size(), pTravelTimes.data());
+        h5io.addTravelTimeTable(stations.networks[irec],
+                                stations.stations[irec],
+                                "S",
+                                sTravelTimes.size(), sTravelTimes.data());
+    }
+/*
     for (int irec=0; irec<static_cast<int> (receivers.size()); ++irec)
     {
         computeDistances(receivers[irec].latitude, receivers[irec].longitude,
@@ -385,4 +423,5 @@ std::cout << receivers[irec].station << " " << receivers[irec].latitude << " " <
                                 "S",
                                 sTravelTimes.size(), sTravelTimes.data());
     }
+*/
 } 
