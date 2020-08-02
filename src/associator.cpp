@@ -877,15 +877,18 @@ std::cout << "residual " << dt << std::endl;
                 event.setXPosition(location.x);
                 event.setYPosition(location.y);
                 event.setZPosition(location.z);
+#ifndef NDEBUG
 std::cout << "Origin time: " << originTime << "(x,y,z)" << location.x << "," << location.y << "," << location.z << std::endl;
+#endif
                 for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
                 {
+#ifndef NDEBUG
                     std::cout << ip
                               << "," << picksInCluster[ip].getWaveformIdentifier()
                               << "," << picksInCluster[ip].getIdentifier()
                               << "," << picksInCluster[ip].getPhaseName()
                               << "," << picksInCluster[ip].getTime() << std::endl;
-
+#endif
                     Arrival arrival(picksInCluster[ip]);
                     arrival.setTime(arrival.getTime() + minPickTime);
                     arrival.setTravelTime(travelTimesToMaximum[ip]
