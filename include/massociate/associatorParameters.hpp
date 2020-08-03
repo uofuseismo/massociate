@@ -199,6 +199,18 @@ public:
      * @result The tile size.
      */
     [[nodiscard]] int getTileSize() const noexcept;
+
+    /*!
+     * @brief Sets the event identifier interval.  Nominally, associated
+     *        events will be counted 1, 2, 3, etc., (interval of 1).
+     * @param[in] interval   The event identifer interval.
+     * @throws std::invalid_argument if this is not positive.
+     */
+    void setEventIdentifierInterval(int interval);
+    /*!
+     * @result The event identifier interval.
+     */
+    int getEventIdentifierInterval() const noexcept;
 private:
     class AssociatorParametersImpl;
     std::unique_ptr<AssociatorParametersImpl> pImpl;
