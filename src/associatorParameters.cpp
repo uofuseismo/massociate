@@ -11,6 +11,7 @@ public:
     int mPageRankIterations = 20;
     int mTables =-1;
     int mTileSize = 1024;
+    int mEventIdentifierInterval = 1;
     OriginTimeObjectiveFunction mOriginTimeObjectiveFunction 
         = OriginTimeObjectiveFunction::L1;
     AnalyticCorrelationFunction mAnalyticFunction
@@ -69,6 +70,7 @@ void AssociatorParameters::clear() noexcept
     pImpl->mPageRankIterations = 20;
     pImpl->mTables =-1;
     pImpl->mTileSize = 1024;
+    pImpl->mEventIdentifierInterval = 1;
     pImpl->mOriginTimeObjectiveFunction = OriginTimeObjectiveFunction::L1;
     pImpl->mAnalyticFunction = AnalyticCorrelationFunction::BOXCAR;
 }
@@ -213,4 +215,19 @@ AnalyticCorrelationFunction
 AssociatorParameters::getAnalyticCorrelationFunction() const noexcept
 {
     return pImpl->mAnalyticFunction;
+}
+
+/// Sets/gets the event interval counter
+void AssociatorParameters::setEventIdentifierInterval(const int interval)
+{
+    if (interval < 1)
+    {
+        throw std::invalid_argument("interval must be positive");
+    }
+    pImpl->mEventIdentifierInterval = interval;
+}
+
+int AssociatorParameters::getEventIdentifierInterval() const noexcept
+{
+    return pImpl->mEventIdentifierInterval;
 }

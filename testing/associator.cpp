@@ -21,12 +21,15 @@ TEST(MAssociate, AssociatorParameters)
     int dbscanClusterSize = 12;
     double dbscanEpsilon = 0.33;
     int pageRankIterations = 25;
+    int evidInterval = 3;
     double pageRankDamping = 0.6;
     auto otObjFn = MAssociate::OriginTimeObjectiveFunction::L1;
     int nTables = 8;
     int tileSize = 128;
     auto function = MAssociate::AnalyticCorrelationFunction::GAUSSIAN;
     MAssociate::AssociatorParameters parameters;
+ 
+    EXPECT_EQ(parameters.getEventIdentifierInterval(), 1);
 
     EXPECT_NO_THROW(
         parameters.setMinimumNumberOfArrivalsToNucleate(minArrivals));
@@ -57,6 +60,9 @@ TEST(MAssociate, AssociatorParameters)
         parameters.setPageRankNumberOfIterations(pageRankIterations));
     EXPECT_EQ(parameters.getPageRankNumberOfIterations(), pageRankIterations);
 
+    EXPECT_NO_THROW(parameters.setEventIdentifierInterval(evidInterval));
+    EXPECT_EQ(parameters.getEventIdentifierInterval(), evidInterval);
+
     MAssociate::AssociatorParameters pCopy(parameters);
     EXPECT_EQ(pCopy.getMinimumNumberOfArrivalsToNucleate(), minArrivals);
     EXPECT_EQ(pCopy.getNumberOfTravelTimeTables(), nTables);
@@ -67,6 +73,7 @@ TEST(MAssociate, AssociatorParameters)
     EXPECT_EQ(pCopy.getDBSCANMinimumClusterSize(), dbscanClusterSize);
     EXPECT_NEAR(pCopy.getPageRankDampingFactor(), pageRankDamping, 1.e-14);
     EXPECT_EQ(pCopy.getPageRankNumberOfIterations(), pageRankIterations);
+    EXPECT_EQ(pCopy.getEventIdentifierInterval(), evidInterval);
 }
 
 TEST(MAssociator, weightedStatistics)
