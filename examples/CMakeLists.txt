@@ -39,7 +39,9 @@ include_directories(
     ${MKL_INCLUDE_DIR}
     ${H5_INCLUDE_DIR}
     ${SFF_INCLUDE_DIR}
+    ${MPI_CXX_INCLUDE_PATH}
 )
+
 #configure_file(${CMAKE_SOURCE_DIR}/include/private/version.hpp.in
 #               ${CMAKE_SOURCE_DIR}/include/massociate/version.hpp)
 #set(PUBLIC_HEADER_DIRECTORIES
@@ -57,12 +59,24 @@ set_target_properties(ttables PROPERTIES
                       CXX_EXTENSIONS NO)
 
 add_executable(associate magna/associate.cpp ${UTILITIES_SRC})
-target_link_libraries(associate ${SFF_LIBRARY} ${MASSOCIATE_LIBRARY} ${HDF5_LIBRARY} ${MKL_LIBRARY})
+if (USE_MPI)
+    target_link_libraries(associate ${SFF_LIBRARY} ${MASSOCIATE_LIBRARY} ${HDF5_LIBRARY} ${MKL_LIBRARY} ${MPI_CXX_LIBRARIES})
+else()
+    target_link_libraries(associate ${SFF_LIBRARY} ${MASSOCIATE_LIBRARY} ${HDF5_LIBRARY} ${MKL_LIBRARY})
+endif()
 target_include_directories(associate PRIVATE ${PRIVATE_HEADER_FILES})
 set_target_properties(associate PROPERTIES
                       CXX_STANDARD 17
                       CXX_STANDARD_REQUIRED YES
                       CXX_EXTENSIONS NO)
+if (USE_MPI)
+    set_target_properties(associate PROPERTIES
+                          COMPILE_DEFINITIONS BUILD_MPI=1)
+endif()
+
+add_executable(arr2arc magna/arr2arc.cpp)
+target_link_libraries(arr2arc ${SFF_LIBRARY})
+
 
 ##########################################################################################
 #                                       Unit Tests                                       #

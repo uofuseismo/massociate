@@ -98,3 +98,29 @@ Next the associations must be repackaged in a format for HypoInverse2000.  This 
     arr2arc
 
 in the build directory.
+
+# Location
+
+Descend into magna/locate and locate with
+
+    runloc.sh
+
+Note, you might have to adjust the number of files in the loop.
+
+Following this, concatenate the results from hypo into a CSV which will make our subsequent life easier by relying on CSV instead of some arcane format.
+
+    arc2catalog.py
+
+Again, you might have to adjust the number of files in the loop.
+
+After creating a catalog you can recompute statics
+
+    statics.py
+
+This is elegant and requires some tap dancing with respect to the locarc2000 file's _setstation_ variable.  If you are using statics I recommend
+
+    1.  Note the updated station file produced by statics.py
+    2.  Update _setstation_ in the locarc2000 file.
+    3.  Rerun _runloc.sh_ and _arc2catalog.py_.
+    4.  Possibly update _../associator.cpp_ and rerun.  This may result in the associator being able to scrounge more picks together.
+
