@@ -18,6 +18,9 @@
 #include "hypoStation.hpp"
 #include "blackList.hpp"
 #include "h5io.hpp"
+#ifdef BUILD_MPI
+#include <mpi.h>
+#endif
 
 /*
 bool operator==(const Pick &a, const Pick &b)
@@ -332,23 +335,33 @@ struct PickList
 };
 
 
-int main()
+int main(int argc, char *argv[])
 {
+#ifdef BUILD_MPI
+    MPI_Init(&argc, &argv);
+#endif
+    int nprocs = 1;
+    int myid = 0;
+#ifdef BUILD_MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+#endif
     // Parameters - one day to be read from a config file or something
     std::string travelTimeTableName = "../magna/travelTimeTables.h5";
     //std::string pickFile = "../magna/mainshock.txt";
     //std::string pickFile = "../magna/split_event.txt";
     //std::string pickFile = "../magna/associated_picks.txt";
-    int nDays = 3; // 44
+    int nDays = 44; // 44
+//nDays = 40;
     std::string pStaticsFile = "/Users/bbaker/trainMagna/p_statics.csv";
     std::string sStaticsFile = "/Users/bbaker/trainMagna/s_statics.csv";
     //std::string hypoStationFile = "../magna/locate/magna.sta"; 
-    std::string hypoStationFile = "../magna/locate/magna.updated.sta"; // re-optimized statics
+    std::string hypoStationFile = "../magna/locate/magna.updated.all.sta"; // re-optimized statics
     int dbscanMinClusterSize = 8; // No causality so err on the larger side
     int minNumberOfPArrivals = 2;
     double dbscanEpsilon = 0.35; // (seconds)
     // Load the static corrections
-    std::cout << "Loading statics..." << std::endl;
+    if (myid == 0){std::cout << "Loading statics..." << std::endl;}
     //StaticCorrections pStatics;
     //StaticCorrections sStatics;
     //pStatics.read(pStaticsFile);
@@ -366,36 +379,61 @@ int main()
     // Load the travel time tables
     MAssociate::Mesh::Spherical::Points3D<float> points;
     H5IO h5io;
-    h5io.openFileForReading(travelTimeTableName);
-    h5io.getGeometry(&points); 
-    auto tableNames = h5io.getTravelTimeTableNames(); 
-    auto nTables = static_cast<int> (tableNames.size());
+    std::vector<std::string> tableNames;
+    int nTables = 0;
+    for (int rank=0; rank<nprocs; ++rank)
+    {
+        if (rank == myid)
+        {
+            h5io.openFileForReading(travelTimeTableName);
+            h5io.getGeometry(&points); 
+            tableNames = h5io.getTravelTimeTableNames(); 
+            nTables = static_cast<int> (tableNames.size());
+        }
+#ifdef BUILD_MPI
+        MPI_Barrier(MPI_COMM_WORLD);
+#endif
+    }
     // Create the associator
     MAssociate::Associator<float> associator;
     parameters.setNumberOfTravelTimeTables(nTables);
     associator.initialize(parameters, points);
     // Add the travel time tables to the associator
-    std::cout << "Loading travel time tables..." << std::endl;
-    for (const auto &tableName : tableNames)
+    if (myid == 0){std::cout << "Loading travel time tables..." << std::endl;}
+    for (int rank=0; rank<nprocs; ++rank)
     {
-        std::vector<std::string> nsp; //network/station/phase
-        boost::split(nsp, tableName, boost::is_any_of("."));
-        std::vector<double> ttimes;
-        h5io.getTravelTimeTable(nsp[0], nsp[1], nsp[2], &ttimes);
-        associator.setTravelTimeTable(nsp[0], nsp[1], nsp[2],
-                                      ttimes.size(), ttimes.data());
+        if (rank == myid)
+        {
+            for (const auto &tableName : tableNames)
+            {
+                std::vector<std::string> nsp; //network/station/phase
+                boost::split(nsp, tableName, boost::is_any_of("."));
+                std::vector<double> ttimes;
+                h5io.getTravelTimeTable(nsp[0], nsp[1], nsp[2], &ttimes);
+                associator.setTravelTimeTable(nsp[0], nsp[1], nsp[2],
+                                              ttimes.size(), ttimes.data());
+            }
+        }
+#ifdef BUILD_MPI
+        MPI_Barrier(MPI_COMM_WORLD);
+#endif
     }
     h5io.close();
+    uint64_t evidOffset = 10000;
     // Load the picks
-    for (int iday=0; iday<nDays; ++iday)
+    int iday0 = 40;
+    for (int jday=iday0; jday<nDays; jday=jday+nprocs) //++iday)
     {
+        int iday = jday + myid;
+        if (iday >=nDays){break;}
         // Load the picks
-        std::string pickFile = "../magna/associated_picks."
+        //std::string pickFile = "../magna/associated_picks."
+        std::string pickFile = "/data/machineLearning/utahMLPicker/magnaCatalog/associate/associated_picks."
                              + std::to_string(iday+1) + ".txt";
-        std::cout << "Loading picks..." << std::endl;
+        std::cout << "Loading picks on process " << myid << std::endl;
         PickList picks;
         picks.read(pickFile, true);
-        std::cout << "Attaching static corrections to arrivals..." << std::endl;
+        //std::cout << "Attaching static corrections to arrivals..." << std::endl;
         picks.setStatics(stations);
         //picks.setPStatics(pStatics);
         //picks.setSStatics(sStatics);
@@ -403,13 +441,14 @@ int main()
         associator.clearPicks();
         associator.clearEvents();
         // Attach the picks to the associator
-        std::cout << "Setting picks..." << std::endl; 
+        std::cout << "Setting picks on process " << myid << std::endl; 
         for (const auto &pick : picks.picks)
         {
             associator.addPick(pick); 
         }
         // Associate (this takes awhile)
-        std::cout << "Associating..." << std::endl;
+        std::cout << "Associating day = " << iday
+                  << " on process " << myid << std::endl;
         associator.associate();
   
         // Get the events 
@@ -439,7 +478,7 @@ int main()
             auto arrivals = event.getArrivals();
             for (const auto &arrival : arrivals)
             {
-                auto evid = event.getIdentifier();
+                auto evid = event.getIdentifier() + evidOffset*(iday+1);
                 SFF::Utilities::Time arrivalTime(arrival.getTime());
                 auto fm = static_cast<int> (arrival.getPolarity());
                 auto waveid = arrival.getWaveformIdentifier();
@@ -459,4 +498,10 @@ int main()
         arrivalFile.close();
         catalogFile.close();
     } // Loop on days
+    std::cout << "Process " << myid << " has finished" << std::endl;
+#ifdef BUILD_MPI
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Finalize();
+#endif
+    return EXIT_SUCCESS;
 }

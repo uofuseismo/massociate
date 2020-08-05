@@ -76,9 +76,25 @@ Next, we run GrowClust's travel time calculator with the following script
 After creating the travel time tables we will repackage them into a 3D point cloud for use by the associator.  To do this run
 
     ttables
+
+in the build directory.
     
 The result will be an HDF5 archive which contains travel time fields at nodes.  In plan the view the result looks like
 
 ![Grid search nodes](gridSearch.jpg)
     
+# Associate
 
+After the travel time tables have been computed we associated with
+
+    mpirun -np n associate 
+
+in the build directory where n is the number of processes you wish to use.  The source may have to be modified so that it processes all days.  Basically the issues is that during the COVID era I have to VPN to a server and the connection expires after 12 hours.
+
+# Generate Files for HypoInverse2000
+
+Next the associations must be repackaged in a format for HypoInverse2000.  This can be done by running 
+
+    arr2arc
+
+in the build directory.
