@@ -15,6 +15,7 @@ public:
     double mStd = 1;
     double mTravelTime =-1;
     double mStaticCorrection = 0;
+    double mPolarityWeight = 1;
     MAssociate::Polarity mPolarity = MAssociate::Polarity::UNKNOWN;
     bool mHaveIdentifier = false;
     bool mHaveArrivalTime = false;
@@ -67,6 +68,7 @@ Arrival& Arrival::operator=(const Pick &pick)
     arrival.setStandardDeviation(pick.getStandardDeviation());
     arrival.setStaticCorrection(pick.getStaticCorrection());
     arrival.setPolarity(pick.getPolarity());
+    arrival.setPolarityWeight(pick.getPolarityWeight());
     *this = arrival;
     return *this; 
 } 
@@ -93,6 +95,7 @@ void Arrival::clear() noexcept
     pImpl->mStd = 1;
     pImpl->mStaticCorrection = 0;
     pImpl->mTravelTime =-1;
+    pImpl->mPolarityWeight = 1;
     pImpl->mPolarity = MAssociate::Polarity::UNKNOWN;
     pImpl->mHaveIdentifier = false;
     pImpl->mHaveArrivalTime = false;
@@ -143,6 +146,21 @@ void Arrival::setPolarity(const MAssociate::Polarity polarity) noexcept
 MAssociate::Polarity Arrival::getPolarity() const noexcept
 {
     return pImpl->mPolarity;
+}
+
+/// Polarity weight
+void Arrival::setPolarityWeight(const double weight)
+{
+    if (weight < 0)
+    {
+        throw std::invalid_argument("weight must be positive");
+    }
+    pImpl->mPolarityWeight = weight;
+}
+
+double Arrival::getPolarityWeight() const noexcept
+{
+    return pImpl->mPolarityWeight;
 }
 
 /// Standard deviation

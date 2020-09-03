@@ -221,6 +221,7 @@ void createGrid(const double lat0, const double lat1, const int nLat,
         throw std::invalid_argument("need more than 2 grid points in x, y, z");
     }
     int nPts = nLat*nLon*nDep;
+    std::cout << "Number of points in grid: " << nPts << std::endl;
     auto dLat = (lat1 - lat0)/(nLat - 1);
     auto dLon = (lon1 - lon0)/(nLon - 1);
     auto dDep = (z1 - z0)/(nDep - 1);
@@ -274,13 +275,13 @@ void createSourcePoints(std::vector<double> *lats,
     int nDepCoarse = static_cast<int> (std::round( (z1Coarse - z0Coarse)
                                                   /deltaCoarse ));
  
-    double deltaFine = 1; // 1 km spacing
-    double lon0Fine =-112.12;
-    double lon1Fine =-111.93;
-    double lat0Fine = 40.68;
-    double lat1Fine = 40.83;
+    double deltaFine = 1.25; // 1 km spacing
+    double lon0Fine =-112.2;
+    double lon1Fine =-111.8;
+    double lat0Fine = 40.6;
+    double lat1Fine = 40.85;
     double z0Fine = 0;
-    double z1Fine = 20;
+    double z1Fine = 18;
     int nLatFine = static_cast<int> (std::round( (lat1Fine - lat0Fine)
                                                 /deltaFine*kmPerDeg) );
     int nLonFine = static_cast<int> (std::round( (lon1Fine - lon0Fine)
@@ -378,7 +379,7 @@ std::ofstream staFile("stations.txt");
         {
            for (int j=0; j<static_cast<int> (lats.size()); ++j)
            {
-               locFile << lons[j] << " " << lats[j] << " " << distances[j]
+               locFile << lons[j] << " " << lats[j] << " " << depths[j] << " " << distances[j]
                        << " " << pTravelTimes[j] << std::endl;
            }
         }

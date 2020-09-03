@@ -77,6 +77,9 @@ endif()
 add_executable(arr2arc magna/arr2arc.cpp)
 target_link_libraries(arr2arc ${SFF_LIBRARY})
 
+#add_executable(trigger magna/trigger.cpp)
+#target_link_libraries(trigger ${MASSOCIATE_LIBRARY} ${SFF_LIBRARY})
+
 
 ##########################################################################################
 #                                       Unit Tests                                       #

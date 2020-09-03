@@ -14,6 +14,7 @@ TEST(MAssociate, Arrival)
     double ttime = 4;
     double weight = 1/std;
     double staticCorrection = 0.2;
+    double polarityWeight = 0.5;
     uint64_t id = 66823;
     std::string phase = "P";
     auto polarity = MAssociate::Polarity::DILATATIONAL;
@@ -50,6 +51,9 @@ TEST(MAssociate, Arrival)
     EXPECT_NO_THROW(pick.setStaticCorrection(staticCorrection));
     EXPECT_NEAR(pick.getStaticCorrection(), staticCorrection, 1.e-14);
 
+    EXPECT_NO_THROW(pick.setPolarityWeight(polarityWeight));
+    EXPECT_NEAR(pick.getPolarityWeight(), polarityWeight, 1.e-14);
+
     // Create an arrival from a pick
     MAssociate::Arrival copyArrival(pick);
     EXPECT_NO_THROW(copyArrival.setTravelTime(ttime));
@@ -63,6 +67,7 @@ TEST(MAssociate, Arrival)
     EXPECT_EQ(copyArrival.getIdentifier(), id);
     EXPECT_NEAR(copyArrival.getStaticCorrection(), staticCorrection, 1.e-14);
     EXPECT_NEAR(copyArrival.getTravelTime(), ttime, 1.e-14);
+    EXPECT_NEAR(copyArrival.getPolarityWeight(), polarityWeight, 1.e-14);
 }
 
 }

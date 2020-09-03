@@ -14,6 +14,7 @@ public:
     double mPickTime = 0;
     double mStd = 1;
     double mStaticCorrection = 0;
+    double mPolarityWeight = 1;
     MAssociate::Polarity mPolarity = MAssociate::Polarity::UNKNOWN;
     bool mHaveIdentifier = false;
     bool mHavePickTime = false;
@@ -67,6 +68,7 @@ void Pick::clear() noexcept
     pImpl->mPickTime = 0;
     pImpl->mStd = 1;
     pImpl->mStaticCorrection = 0;
+    pImpl->mPolarityWeight = 1;
     pImpl->mPolarity = MAssociate::Polarity::UNKNOWN;
     pImpl->mHaveIdentifier = false;
     pImpl->mHavePickTime = false;
@@ -117,6 +119,21 @@ void Pick::setPolarity(const MAssociate::Polarity polarity) noexcept
 MAssociate::Polarity Pick::getPolarity() const noexcept
 {
     return pImpl->mPolarity;
+}
+
+/// Polarity weight
+void Pick::setPolarityWeight(const double weight)
+{
+    if (weight < 0)
+    {
+        throw std::invalid_argument("weight must be positive");
+    }
+    pImpl->mPolarityWeight = weight;
+}
+
+double Pick::getPolarityWeight() const noexcept
+{
+    return pImpl->mPolarityWeight;
 }
 
 /// Standard deviation

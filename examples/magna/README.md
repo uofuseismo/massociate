@@ -124,3 +124,4 @@ This is elegant and requires some tap dancing with respect to the locarc2000 fil
     3.  Rerun _runloc.sh_ and _arc2catalog.py_.
     4.  Possibly update _../associator.cpp_ and rerun.  This may result in the associator being able to scrounge more picks together.
 
+Next, merge the catalogs.

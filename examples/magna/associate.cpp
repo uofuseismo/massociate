@@ -37,7 +37,9 @@ bool operator==(const Pick &a, const Pick &b)
 
 bool parsePick(const std::string &line,
                MAssociate::Pick *pick,
-               bool heuristicWeight = true)
+               bool heuristicWeight = true,
+               double pModelingError = 0.1,
+               double sModelingError = 0.2)
 {
     // http://alomax.free.fr/nlloc/index.html
     //CAPU   UU   ENZ  ? S      ? 20200317 1346  0.7750 GAU  1.00e-01 -1.00e+00 -1.00e+00 -1.00e+00
@@ -111,7 +113,14 @@ bool parsePick(const std::string &line,
     }
     else
     {
-        width = errorMagnitude;
+        if (phase == "P")
+        {
+            width = errorMagnitude + pModelingError;
+        }
+        else
+        {
+            width = errorMagnitude + sModelingError;
+        }
     } 
     auto stddev = width/std::sqrt(12.0);  // Uniform distribution
 
@@ -120,6 +129,7 @@ bool parsePick(const std::string &line,
     pick->setPolarity(polarity);
     pick->setStandardDeviation(stddev);
     pick->setTime(time.getEpochalTime());
+    pick->setPolarityWeight(codaDuration);
     return false;
 }
 
@@ -353,10 +363,12 @@ int main(int argc, char *argv[])
     //std::string pickFile = "../magna/associated_picks.txt";
     int nDays = 44; // 44
 //nDays = 40;
+    bool heuristicWidth = false;
     std::string pStaticsFile = "/Users/bbaker/trainMagna/p_statics.csv";
     std::string sStaticsFile = "/Users/bbaker/trainMagna/s_statics.csv";
     //std::string hypoStationFile = "../magna/locate/magna.sta"; 
-    std::string hypoStationFile = "../magna/locate/magna.updated.all.sta"; // re-optimized statics
+    //std::string hypoStationFile = "../magna/locate/magna.updated.all.sta"; // re-optimized statics
+    std::string hypoStationFile = "../magna/locate/magna.updated.all.iter2.sta"; // final iteration
     int dbscanMinClusterSize = 8; // No causality so err on the larger side
     int minNumberOfPArrivals = 2;
     double dbscanEpsilon = 0.35; // (seconds)
@@ -422,6 +434,7 @@ int main(int argc, char *argv[])
     uint64_t evidOffset = 10000;
     // Load the picks
     int iday0 = 40;
+//nDays = 40;
     for (int jday=iday0; jday<nDays; jday=jday+nprocs) //++iday)
     {
         int iday = jday + myid;
@@ -432,7 +445,7 @@ int main(int argc, char *argv[])
                              + std::to_string(iday+1) + ".txt";
         std::cout << "Loading picks on process " << myid << std::endl;
         PickList picks;
-        picks.read(pickFile, true);
+        picks.read(pickFile, heuristicWidth);
         //std::cout << "Attaching static corrections to arrivals..." << std::endl;
         picks.setStatics(stations);
         //picks.setPStatics(pStatics);
@@ -466,7 +479,7 @@ int main(int argc, char *argv[])
                                     + std::to_string(iday+1) + ".csv";
         std::ofstream arrivalFile(arrivalFileName); //"../magna/prelimArrivals.csv");
         std::ofstream catalogFile(catalogFileName); //"..//magna/prelimLocs.csv");
-        arrivalFile << "evid,network,station,channel,location_code,phase,arrival_time,first_motion,origin_time,event_latitude,event_longitude,event_depth" << std::endl;
+        arrivalFile << "evid,network,station,channel,location_code,phase,arrival_time,first_motion,first_motion_weight,origin_time,event_latitude,event_longitude,event_depth" << std::endl;
         for (const auto &event : events)
         {
             //if (event.getNumberOfPArrivals() < minNumberOfPArrivals){continue;}
@@ -491,6 +504,7 @@ int main(int argc, char *argv[])
                             << waveid.getLocationCode() << ","
                             << arrival.getPhaseName() << ","
                             << arrivalTime << "," << fm << "," 
+                            << arrival.getPolarityWeight() << ","
                             << ot << "," << lat << "," << lon << "," << depth << std::endl; 
             }
             catalogFile << ot << "," << lat << "," << lon << "," << depth << std::endl;

@@ -202,6 +202,18 @@ public:
      * @brief Gets the arrival's polarity.
      */
     [[nodiscard]] MAssociate::Polarity getPolarity() const noexcept;
+    /*!
+     * @brief Sets the polarities weight.  This is useful when the polarity
+     *        is produced by an ML algorithm and has an accompanying posterior
+     *        probability.
+     * @param[in] weight  The polarity's weight.
+     * @throws std::invalid_argument if the weight is not positive.
+     */
+    void setPolarityWeight(double weight);
+    /*!
+     * @result The polarity's weight.
+     */
+    [[nodiscard]] double getPolarityWeight() const noexcept;
     /*! @} */
 
     /*! @name Travel Time
