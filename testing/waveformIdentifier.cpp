@@ -34,6 +34,9 @@ TEST(MAssociate, WaveformIdentifier)
     waveid.clear();
     EXPECT_TRUE(waveidCopy != waveid);
     EXPECT_TRUE(waveid.isEmpty());
+
+    MAssociate::WaveformIdentifier waveid2(network, station, channel, location);
+    EXPECT_TRUE(waveid2, waveidCopy);
 }
 }
 

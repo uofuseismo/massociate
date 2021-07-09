@@ -43,6 +43,17 @@ WaveformIdentifier::WaveformIdentifier(WaveformIdentifier &&waveid) noexcept
     *this = std::move(waveid);
 }
 
+WaveformIdentifier::WaveformIdentifier(
+    const std::string &network, const std::string &station,
+    const std::string &channel, const std::string &locationCode) noexcept :
+    pImpl(std::make_unique<WaveformIdentifierImpl> ())
+{
+    setNetwork(network);
+    setStation(station);
+    setChannel(channel);
+    setLocationCode(locationCode);    
+}
+
 /// Operators
 WaveformIdentifier&
 WaveformIdentifier::operator=(const WaveformIdentifier &waveid)
