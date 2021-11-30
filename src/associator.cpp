@@ -555,6 +555,7 @@ T Associator<T>::getMaximumDifferentialTravelTime() const noexcept
     return pImpl->mMaxDifferentialTime;
 }
 
+/*
 /// Picks to bind
 template<class T>
 void Associator<T>::bindPickToEvent(const Pick &pick)
@@ -603,6 +604,7 @@ void Associator<T>::bindPickToEvent(const Pick &pick)
          
     } 
 }
+*/
 
 /// Picks
 template<class T>

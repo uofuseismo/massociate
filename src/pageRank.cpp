@@ -9,6 +9,7 @@ using namespace MAssociate;
 namespace
 {
 
+[[maybe_unused]]
 void gemv(const int lda, const int nRows, const int nCols,
           const double *A, const double *x, double *y,
           const double alpha = 1,
@@ -19,6 +20,7 @@ void gemv(const int lda, const int nRows, const int nCols,
                 x, 1, beta, y, 1);
 } 
 
+[[maybe_unused]]
 void gemv(const int lda, const int nRows, const int nCols,
           const float *A, const float *x, float *y,
           const float alpha = 1,
