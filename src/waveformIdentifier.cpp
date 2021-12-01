@@ -147,7 +147,7 @@ bool WaveformIdentifier::isEmpty() const noexcept
 
 std::ostream&
 MAssociate::operator<<(std::ostream &os,
-                       const MAssociate::WaveformIdentifier waveid)
+                       const MAssociate::WaveformIdentifier &waveid)
 {
     auto result = waveid.getNetwork() + "."
                 + waveid.getStation() + "."

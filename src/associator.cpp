@@ -751,6 +751,11 @@ void Associator<T>::associate()
         }
         // Migrate
         pImpl->mMigrate.migrate();
+        if (!pImpl->mMigrate.haveImage())
+        {
+            T0 = maxOriginTime;
+            continue;
+        }
         // Attempt to cluster (origin times) given the maximum of the
         // migration image
         auto travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();

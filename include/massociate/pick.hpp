@@ -158,5 +158,7 @@ private:
     class PickImpl;
     std::unique_ptr<PickImpl> pImpl;
 };
+std::ostream& operator<<(std::ostream &os,
+                         const MAssociate::Pick &pick);
 }
 #endif

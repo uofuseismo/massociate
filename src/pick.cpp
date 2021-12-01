@@ -1,4 +1,5 @@
 #include <string>
+#include <sstream>
 #include "massociate/pick.hpp"
 #include "massociate/arrival.hpp"
 #include "massociate/waveformIdentifier.hpp"
@@ -207,4 +208,50 @@ void Pick::setStaticCorrection(const double correction) noexcept
 double Pick::getStaticCorrection() const noexcept
 {
     return pImpl->mStaticCorrection;
+}
+
+/// Print the pick
+std::ostream&
+MAssociate::operator<<(std::ostream &os,
+                       const MAssociate::Pick &pick)
+{
+    std::string result = "Pick\n";
+    if (pick.haveWaveformIdentifier())
+    {
+        std::stringstream ss;
+        ss << pick.getWaveformIdentifier();
+        result = result + "   Waveform: " + ss.str() + "\n";
+    } 
+    if (pick.haveTime())
+    {
+        result = result + "   Time: " + std::to_string(pick.getTime()) + "\n";
+    }
+    result = result + "   Standard Deviation: "
+                    + std::to_string(pick.getStandardDeviation())
+                    + " (s)\n";
+    result = result + "   Weight: " + std::to_string(pick.getWeight())
+                    + " (1/s)\n";
+    if (pick.havePhaseName())
+    {
+        result = result + "   Phase: " + pick.getPhaseName() + "\n";
+    }
+    auto polarity = pick.getPolarity();
+    if (polarity == MAssociate::Polarity::COMPRESSIONAL)
+    {
+        result = result + "   Polarity: Compression\n";
+    }
+    else if (polarity == MAssociate::Polarity::DILATATIONAL)
+    {
+        result = result + "   Polarity: Dilatational\n";
+    }
+    else
+    {
+        result = result + "   Polarity: Unknown\n";
+    }
+    if (pick.haveIdentifier())
+    {
+        result = result + "   Identifier: "
+               + std::to_string(pick.getIdentifier()) + "\n";
+    }
+    return os << result;
 }

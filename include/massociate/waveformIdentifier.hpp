@@ -103,6 +103,6 @@ private:
 bool operator==(const WaveformIdentifier &lhs, const WaveformIdentifier &rhs) noexcept;
 bool operator!=(const WaveformIdentifier &lhs, const WaveformIdentifier &rhs) noexcept;
 std::ostream& operator<<(std::ostream &os,
-                         const MAssociate::WaveformIdentifier waveid);
+                         const MAssociate::WaveformIdentifier &waveid);
 }
 #endif

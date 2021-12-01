@@ -60,11 +60,9 @@ struct PickTablePair
     /// The index of the first and second pick in mPicks.
     std::pair<int, int> pickIndices;
 };
-/*!
- * @brief Makes the travel time pairs.
- * @param ids   Travel time table IDs.
- * @return A list of picks to migrate.
- */
+/// @brief Makes the travel time pairs.
+/// @param ids   Travel time table IDs.
+/// @return A list of picks to migrate.
 template<class T>
 std::vector<struct PickTablePair> makePairs(const std::vector<T> &ids)
 {
@@ -73,10 +71,10 @@ std::vector<struct PickTablePair> makePairs(const std::vector<T> &ids)
     std::vector<PickTablePair> pairs;
     PickTablePair pair;
     pairs.reserve(nPairs);
-    for (int i=0; i<n; ++i)
+    for (int i = 0; i < n; ++i)
     {
         auto id = ids[i];
-        for (int j=i+1; j<n; ++j)
+        for (int j = i+1; j < n; ++j)
         {
             auto jd = ids[j];
             // For example, a station may get two subsequent P wave triggers.
@@ -102,13 +100,13 @@ std::vector<struct PickTablePair>
     std::vector<PickTablePair> pairs;
     PickTablePair pair;
     pairs.reserve(nPairs);
-    for (int i=0; i<n; ++i)
+    for (int i = 0; i < n; ++i)
     {
         auto id = ids[i];
         auto iOnsetTime = picks[i].getTime();
         auto iPhase = picks[i].getPhaseName();
         auto iSNCL = picks[i].getWaveformIdentifier();
-        for (int j=i+1; j<n; ++j)
+        for (int j = i+1; j < n; ++j)
         {
             auto jd = ids[j];
             auto jOnsetTime = picks[j].getTime(); 
