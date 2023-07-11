@@ -3,7 +3,7 @@ project(MAssociate VERSION 0.1.0 LANGUAGES CXX)
 enable_testing()
 
 include(CheckCXXCompilerFlag)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FindOpenMP QUIET)
 if (OPENMP_FOUND)
@@ -60,7 +60,7 @@ target_link_libraries(massociate ${DAAL_LIBRARY} ${MKL_LIBRARY} ${TBB_LIBRARY})
 target_include_directories(massociate PUBLIC  ${PUBLIC_HEADER_FILES})
 target_include_directories(massociate PRIVATE ${PRIVATE_HEADER_FILES})
 set_target_properties(massociate PROPERTIES
-                      CXX_STANDARD 17
+                      CXX_STANDARD 20
                       CXX_STANDARD_REQUIRED YES
                       CXX_EXTENSIONS NO)
 
@@ -79,7 +79,7 @@ add_executable(tests
 target_link_libraries(tests PRIVATE massociate ${GTEST_BOTH_LIBRARIES})
 target_include_directories(tests PRIVATE ${GTEST_INCLUDE_DIRS})
 set_target_properties(tests PROPERTIES
-                      CXX_STANDARD 17
+                      CXX_STANDARD 20
                       CXX_STANDARD_REQUIRED YES
                       CXX_EXTENSIONS NO)
 add_test(NAME tests

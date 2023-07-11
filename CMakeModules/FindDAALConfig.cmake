@@ -8,8 +8,9 @@ endif()
 #   set(VM "libippvm.a")
 #   set(CORE "libippcore.a")
 #else()
-   set(CORE "daal_core")
-   set(SEQUENTIAL "daal_sequential")
+   set(CORE "onedal_core")
+   #set(SEQUENTIAL "onedal_sequential")
+   set(THREAD "onedal_thread")
 #endif()
 
 find_path(DAAL_INCLUDE_DIR
@@ -24,18 +25,26 @@ find_library(DAAL_CORE_LIBRARY
                    $ENV{DAAL_LIB_DIR}
                    /opt/intel/daal/lib/intel64
                    /opt/intel/daal/lib)
-find_library(DAAL_SEQUENTIAL_LIBRARY
-             NAMES ${SEQUENTIAL}
+#find_library(DAAL_SEQUENTIAL_LIBRARY
+#             NAMES ${SEQUENTIAL}
+#             PATHS $ENV{DAAL_ROOT}/lib/intel64
+#                   $ENV{DAAL_ROOT}/lib/
+#                   $ENV{DAAL_LIB_DIR}
+#                   /opt/intel/daal/lib/intel64
+#                   /opt/intel/daal/lib)
+find_library(DAAL_THREAD_LIBRARY
+             NAMES ${THREAD}
              PATHS $ENV{DAAL_ROOT}/lib/intel64
                    $ENV{DAAL_ROOT}/lib/
                    $ENV{DAAL_LIB_DIR}
                    /opt/intel/daal/lib/intel64
                    /opt/intel/daal/lib)
 
-set(DAAL_LIBRARY ${DAAL_SEQUENTIAL_LIBRARY} ${DAAL_CORE_LIBRARY})
+#set(DAAL_LIBRARY ${DAAL_SEQUENTIAL_LIBRARY} ${DAAL_CORE_LIBRARY})
+set(DAAL_LIBRARY ${DAAL_CORE_LIBRARY} ${DAAL_THREAD_LIBRARY})
 
 # Handle the QUIETLY and REQUIRED arguments and set MKL_FOUND to TRUE if
 # all listed variables are TRUE.
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(FindDAAL DEFAULT_MSG DAAL_LIBRARY DAAL_INCLUDE_DIR DAAL_CORE_LIBRARY DAAL_SEQUENTIAL_LIBRARY)
-mark_as_advanced(DAAL_INCLUDE_DIR DAAL_LIBRARY DAAL_SEQUENTIAL_LIBRARY DAAL_CORE_LIBRARY)
+find_package_handle_standard_args(FindDAAL DEFAULT_MSG DAAL_LIBRARY DAAL_INCLUDE_DIR)
+mark_as_advanced(DAAL_INCLUDE_DIR DAAL_LIBRARY)

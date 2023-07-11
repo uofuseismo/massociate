@@ -1,6 +1,7 @@
 #ifndef MASSOCIATE_PAGERANK_HPP
 #define MASSOCIATE_PAGERANK_HPP
 #include <memory>
+#include <limits>
 namespace MAssociate
 {
 class PageRank

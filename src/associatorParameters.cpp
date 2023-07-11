@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "massociate/associatorParameters.hpp"
 using namespace MAssociate;
 

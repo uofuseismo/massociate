@@ -555,7 +555,7 @@ int Migrate<T>::getNumberOfPicks() const noexcept
 template<class T>
 void Migrate<T>::migrate()
 {
-    const T sqrt12 = 3.464101615137754587054892683011744733;
+    constexpr T sqrt12 = 3.464101615137754587054892683011744733;
     if (!isInitialized())
     { throw std::runtime_error("Class not initialized"); }
     // Null out result

@@ -1,5 +1,6 @@
 #ifndef ANALYTIC_SIGNALS_HPP
 #define ANALYTIC_SIGNALS_HPP
+#include <stdexcept>
 #include <cmath>
 namespace
 {

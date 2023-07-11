@@ -1,4 +1,5 @@
 #include <string>
+#include <stdexcept>
 #include "massociate/arrival.hpp"
 #include "massociate/pick.hpp"
 #include "massociate/waveformIdentifier.hpp"
