@@ -13,13 +13,6 @@ public:
         mChannel.reserve(16);
         mLocation.reserve(16);
     }
-    void clear() noexcept
-    {
-        mNetwork.clear();
-        mStation.clear();
-        mChannel.clear();
-        mLocation.clear();
-    } 
     std::string mNetwork;
     std::string mStation;
     std::string mChannel;
@@ -91,7 +84,7 @@ WaveformIdentifier::~WaveformIdentifier() = default;
 
 void WaveformIdentifier::clear() noexcept
 {
-    pImpl->clear();
+    pImpl = std::make_unique<WaveformIdentifierImpl> ();
 }
 
 /// Network
@@ -138,11 +131,12 @@ void WaveformIdentifier::setLocationCode(const std::string &str) noexcept
     pImpl->mLocation = str;
 }
 
+/// Is anything set?
 bool WaveformIdentifier::isEmpty() const noexcept
 {
-    auto lenos = pImpl->mNetwork.size() + pImpl->mStation.size()
-               + pImpl->mChannel.size() + pImpl->mLocation.size();
-    return (lenos == 0);
+    auto stringLength = pImpl->mNetwork.size() + pImpl->mStation.size()
+                      + pImpl->mChannel.size() + pImpl->mLocation.size();
+    return stringLength == 0;
 }
 
 std::ostream&

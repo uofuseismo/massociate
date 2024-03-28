@@ -1,3 +1,4 @@
+#include <cmath>
 #include <string>
 #include <sstream>
 #include "massociate/pick.hpp"
@@ -10,15 +11,14 @@ class Pick::PickImpl
 {
 public:
     MAssociate::WaveformIdentifier mWaveID;
-    std::string mPhaseName;
-    uint64_t mIdentifier = 0;
-    double mPickTime = 0;
-    double mStd = 1;
-    double mStaticCorrection = 0;
-    double mPolarityWeight = 1;
-    MAssociate::Polarity mPolarity = MAssociate::Polarity::UNKNOWN;
-    bool mHaveIdentifier = false;
-    bool mHavePickTime = false;
+    std::string mPhaseHint;
+    uint64_t mIdentifier{0};
+    std::chrono::microseconds mTime{0};
+    double mStandardError{1};
+    double mFirstMotionWeight{1};
+    Arrival::FirstMotion mFirstMotion{Arrival::FirstMotion::Unknown};
+    bool mHaveIdentifier{false};
+    bool mHavePickTime{false};
 };
 
 /// C'tor
@@ -63,47 +63,70 @@ Pick::~Pick() = default;
 [[maybe_unused]]
 void Pick::clear() noexcept
 {
-    pImpl->mWaveID.clear();
-    pImpl->mPhaseName.clear();
-    pImpl->mIdentifier = 0;
-    pImpl->mPickTime = 0;
-    pImpl->mStd = 1;
-    pImpl->mStaticCorrection = 0;
-    pImpl->mPolarityWeight = 1;
-    pImpl->mPolarity = MAssociate::Polarity::UNKNOWN;
-    pImpl->mHaveIdentifier = false;
-    pImpl->mHavePickTime = false;
+    pImpl = std::make_unique<PickImpl> ();
 }
 
 /// Set/get phase name
-void Pick::setPhaseName(const std::string &phaseName)
+void Pick::setPhaseHint(const Pick::PhaseHint phaseHint) noexcept
 {
-    if (phaseName.empty()){throw std::invalid_argument("Phase name is blank");}
-    pImpl->mPhaseName = phaseName;
+    if (phaseHint == Pick::PhaseHint::P)
+    {
+        setPhaseHint("P");
+    }
+    else if (phaseHint == Pick::PhaseHint::S)
+    {
+        setPhaseHint("S");
+    }
+    else if (phaseHint == Pick::PhaseHint::Unknown)
+    {
+        setPhaseHint("Unknown");
+    }
+    else if (phaseHint == Pick::PhaseHint::Noise)
+    {
+        setPhaseHint("Noise");
+    }
+#ifndef NDEBUG
+    else
+    {
+        assert(false);
+    }
+#endif
 }
 
-std::string Pick::getPhaseName() const
+void Pick::setPhaseHint(const std::string &phaseHint)
 {
-    if (!havePhaseName()){throw std::runtime_error("Phase name not set.");}
-    return pImpl->mPhaseName;
+    if (phaseHint.empty()){throw std::invalid_argument("Phase hint is blank");}
+    pImpl->mPhaseHint = phaseHint;
+}
+
+std::string Pick::getPhaseHint() const
+{
+    if (!havePhaseHint()){throw std::runtime_error("Phase hint not set.");}
+    return pImpl->mPhaseHint;
 } 
 
-bool Pick::havePhaseName() const noexcept
+bool Pick::havePhaseHint() const noexcept
 {
-    return !pImpl->mPhaseName.empty();
+    return !pImpl->mPhaseHint.empty();
 }
 
 /// Get/set pick time
-void Pick::setTime(const double pickTime) noexcept
+void Pick::setTime(const double time) noexcept
 {
-    pImpl->mPickTime = pickTime;
+    auto iTime = static_cast<int64_t> (std::round(time*1.e6));
+    setTime(std::chrono::microseconds {iTime});
+}
+
+void Pick::setTime(const std::chrono::microseconds &time) noexcept
+{
+    pImpl->mTime = time;
     pImpl->mHavePickTime = true;
 }
 
-double Pick::getTime() const
+std::chrono::microseconds Pick::getTime() const
 {
     if (!haveTime()){throw std::invalid_argument("Pick time not set");}
-    return pImpl->mPickTime;
+    return pImpl->mTime;
 }
 
 bool Pick::haveTime() const noexcept
@@ -111,50 +134,50 @@ bool Pick::haveTime() const noexcept
     return pImpl->mHavePickTime;
 }
 
-/// Polarity
-void Pick::setPolarity(const MAssociate::Polarity polarity) noexcept
+/// First motion
+void Pick::setFirstMotion(const Arrival::FirstMotion firstMotion) noexcept
 {
-    pImpl->mPolarity = polarity;
+    pImpl->mFirstMotion = firstMotion;
 }
 
-MAssociate::Polarity Pick::getPolarity() const noexcept
+MAssociate::Arrival::FirstMotion Pick::getFirstMotion() const noexcept
 {
-    return pImpl->mPolarity;
+    return pImpl->mFirstMotion;
 }
 
-/// Polarity weight
-void Pick::setPolarityWeight(const double weight)
+/// First motion weight
+void Pick::setFirstMotionWeight(const double weight)
 {
     if (weight < 0)
     {
-        throw std::invalid_argument("weight must be positive");
+        throw std::invalid_argument("Weight must be positive");
     }
-    pImpl->mPolarityWeight = weight;
+    pImpl->mFirstMotionWeight = weight;
 }
 
-double Pick::getPolarityWeight() const noexcept
+double Pick::getFirstMotionWeight() const noexcept
 {
-    return pImpl->mPolarityWeight;
+    return pImpl->mFirstMotionWeight;
 }
 
-/// Standard deviation
-void Pick::setStandardDeviation(const double std)
+/// Standard error
+void Pick::setStandardError(const double standardError)
 {
-    if (std <= 0)
+    if (standardError <= 0)
     {
-        throw std::invalid_argument("Standard deviation must be positive");
+        throw std::invalid_argument("Standard error must be positive");
     }
-    pImpl->mStd = std;
+    pImpl->mStandardError = standardError;
 }
 
-double Pick::getStandardDeviation() const noexcept
+double Pick::getStandardError() const noexcept
 {
-    return pImpl->mStd;
+    return pImpl->mStandardError;
 }
 
 double Pick::getWeight() const noexcept
 {
-    return 1/pImpl->mStd;
+    return 1/pImpl->mStandardError;
 }
 
 /// WaveformIdentifier
@@ -199,17 +222,6 @@ bool Pick::haveIdentifier() const noexcept
     return pImpl->mHaveIdentifier;
 }
 
-/// Static correction
-void Pick::setStaticCorrection(const double correction) noexcept
-{
-    pImpl->mStaticCorrection = correction;
-}
-
-double Pick::getStaticCorrection() const noexcept
-{
-    return pImpl->mStaticCorrection;
-}
-
 /// Print the pick
 std::ostream&
 MAssociate::operator<<(std::ostream &os,
@@ -224,29 +236,30 @@ MAssociate::operator<<(std::ostream &os,
     } 
     if (pick.haveTime())
     {
-        result = result + "   Time: " + std::to_string(pick.getTime()) + "\n";
+        result = result + "   Time: "
+               + std::to_string(pick.getTime().count()*1.e-6) + "\n";
     }
-    result = result + "   Standard Deviation: "
-                    + std::to_string(pick.getStandardDeviation())
+    result = result + "   Standard Error: "
+                    + std::to_string(pick.getStandardError())
                     + " (s)\n";
     result = result + "   Weight: " + std::to_string(pick.getWeight())
                     + " (1/s)\n";
-    if (pick.havePhaseName())
+    if (pick.havePhaseHint())
     {
-        result = result + "   Phase: " + pick.getPhaseName() + "\n";
+        result = result + "   Phase Hint: " + pick.getPhaseHint() + "\n";
     }
-    auto polarity = pick.getPolarity();
-    if (polarity == MAssociate::Polarity::COMPRESSIONAL)
+    auto firstMotion = pick.getFirstMotion();
+    if (firstMotion == MAssociate::Arrival::FirstMotion::Up)
     {
-        result = result + "   Polarity: Compression\n";
+        result = result + "   First Motion: Up\n";
     }
-    else if (polarity == MAssociate::Polarity::DILATATIONAL)
+    else if (firstMotion == MAssociate::Arrival::FirstMotion::Down)
     {
-        result = result + "   Polarity: Dilatational\n";
+        result = result + "   First Motion: Down\n";
     }
     else
     {
-        result = result + "   Polarity: Unknown\n";
+        result = result + "   First Motion: Unknown\n";
     }
     if (pick.haveIdentifier())
     {

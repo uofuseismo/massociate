@@ -11,6 +11,7 @@ class WaveformIdentifier
 public:
     /// @name Constructors
     /// @{
+
     /// @brief Default constructor.
     WaveformIdentifier();
     /// @brief Copy constructor.
@@ -35,6 +36,7 @@ public:
 
     /// @name Operators
     /// @{
+
     /// @brief Copy assignment operator.
     /// @param[in] waveformIdentifier  The waveform identifier to copy.
     /// @result A deep copy of sncl.
@@ -48,6 +50,7 @@ public:
 
     /// @name Destructors
     /// @{
+
     /// @brief Default destructor.
     ~WaveformIdentifier();
     /// @brief Clears the waveform identifier class.
@@ -56,6 +59,7 @@ public:
 
     /// @name Network
     /// @{
+
     /// @brief Sets the network name.
     /// @param[in] name  The name of the network.
     void setNetwork(const std::string &name) noexcept;
@@ -65,6 +69,7 @@ public:
 
     /// @name Station
     /// @{
+
     /// @brief Sets the station name.
     /// @param[in] name  The name of the station.
     void setStation(const std::string &name) noexcept;
@@ -74,6 +79,7 @@ public:
 
     /// @name Channel
     /// @{
+
     /// @brief Sets the channel name.
     /// @param[in] name  The name of the channel.
     void setChannel(const std::string &name) noexcept;
@@ -83,6 +89,7 @@ public:
 
     /// @name Location Code
     /// @{
+
     /// @brief Sets the location code.
     /// @param[in] name  The name of the location code.
     void setLocationCode(const std::string &name) noexcept;
@@ -100,8 +107,11 @@ private:
     class WaveformIdentifierImpl;
     std::unique_ptr<WaveformIdentifierImpl> pImpl;
 };
+/// @result True indicates lhs is equal to rhs.
 bool operator==(const WaveformIdentifier &lhs, const WaveformIdentifier &rhs) noexcept;
+/// @result True indicates lhs is not equal to rhs.
 bool operator!=(const WaveformIdentifier &lhs, const WaveformIdentifier &rhs) noexcept;
+/// @result A string representation of the waveform identifier.
 std::ostream& operator<<(std::ostream &os,
                          const MAssociate::WaveformIdentifier &waveid);
 }

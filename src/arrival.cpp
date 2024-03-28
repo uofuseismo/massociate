@@ -1,4 +1,6 @@
+#include <cmath>
 #include <string>
+#include <chrono>
 #include <stdexcept>
 #include "massociate/arrival.hpp"
 #include "massociate/pick.hpp"
@@ -9,26 +11,25 @@ using namespace MAssociate;
 class Arrival::ArrivalImpl
 {
 public:
-    MAssociate::WaveformIdentifier mWaveID;
-    std::string mPhaseName;
-    uint64_t mIdentifier = 0;
-    double mArrivalTime = 0;
-    double mStd = 1;
-    double mTravelTime =-1;
-    double mStaticCorrection = 0;
-    double mPolarityWeight = 1;
-    MAssociate::Polarity mPolarity = MAssociate::Polarity::UNKNOWN;
-    bool mHaveIdentifier = false;
-    bool mHaveArrivalTime = false;
+    MAssociate::WaveformIdentifier mWaveIdentifier;
+    std::string mPhase;
+    std::chrono::microseconds mArrivalTime{0};
+    uint64_t mIdentifier{0};
+    double mStandardError{1};
+    double mTravelTime{-1};
+    double mFirstMotionWeight{1};
+    Arrival::FirstMotion mFirstMotion{Arrival::FirstMotion::Unknown};
+    bool mHaveIdentifier{false};
+    bool mHaveArrivalTime{false};
 };
 
-/// C'tor
+/// Constructor
 Arrival::Arrival() :
     pImpl(std::make_unique<ArrivalImpl> ())
 {
 }
 
-/// Copy c'tor
+/// Copy constructor
 Arrival::Arrival(const Arrival &arrival)
 {
     *this = arrival;
@@ -39,7 +40,7 @@ Arrival::Arrival(const Pick &pick)
     *this = pick;
 }
 
-/// Move c'tor
+/// Move constructor
 [[maybe_unused]]
 Arrival::Arrival(Arrival &&arrival) noexcept
 {
@@ -63,13 +64,19 @@ Arrival& Arrival::operator=(const Pick &pick)
     {
         arrival.setWaveformIdentifier(pick.getWaveformIdentifier());
     }
-    if (pick.havePhaseName()){arrival.setPhaseName(pick.getPhaseName());}
+    if (pick.havePhaseHint())
+    {
+        auto phaseHint = pick.getPhaseHint();
+        if (phaseHint == "P" || phaseHint == "S")
+        {
+            arrival.setPhase(phaseHint);
+        }
+    }
     if (pick.haveIdentifier()){arrival.setIdentifier(pick.getIdentifier());}
     if (pick.haveTime()){arrival.setTime(pick.getTime());}
-    arrival.setStandardDeviation(pick.getStandardDeviation());
-    arrival.setStaticCorrection(pick.getStaticCorrection());
-    arrival.setPolarity(pick.getPolarity());
-    arrival.setPolarityWeight(pick.getPolarityWeight());
+    arrival.setStandardError(pick.getStandardError());
+    arrival.setFirstMotion(pick.getFirstMotion());
+    arrival.setFirstMotionWeight(pick.getFirstMotionWeight());
     *this = arrival;
     return *this; 
 } 
@@ -89,45 +96,59 @@ Arrival::~Arrival() = default;
 [[maybe_unused]]
 void Arrival::clear() noexcept
 {
-    pImpl->mWaveID.clear();
-    pImpl->mPhaseName.clear();
-    pImpl->mIdentifier = 0;
-    pImpl->mArrivalTime = 0;
-    pImpl->mStd = 1;
-    pImpl->mStaticCorrection = 0;
-    pImpl->mTravelTime =-1;
-    pImpl->mPolarityWeight = 1;
-    pImpl->mPolarity = MAssociate::Polarity::UNKNOWN;
-    pImpl->mHaveIdentifier = false;
-    pImpl->mHaveArrivalTime = false;
+    pImpl = std::make_unique<ArrivalImpl> ();
 }
 
 /// Set/get phase name
-void Arrival::setPhaseName(const std::string &phaseName)
+void Arrival::setPhase(const Arrival::Phase phase) noexcept
 {
-    if (phaseName.empty()){throw std::invalid_argument("Phase name is blank");}
-    pImpl->mPhaseName = phaseName;
+    if (phase == Arrival::Phase::P)
+    {
+        setPhase("P");
+    }
+    else if (phase == Arrival::Phase::S)
+    {
+        setPhase("S");
+    }
+#ifndef NDEBUG
+    else
+    {
+        assert(false);
+    }
+#endif
 }
 
-std::string Arrival::getPhaseName() const
+void Arrival::setPhase(const std::string &phase)
 {
-    if (!havePhaseName()){throw std::runtime_error("Phase name not set.");}
-    return pImpl->mPhaseName;
+    if (phase.empty()){throw std::invalid_argument("Phase name is blank");}
+    pImpl->mPhase = phase;
+}
+
+std::string Arrival::getPhase() const
+{
+    if (!havePhase()){throw std::runtime_error("Phase not set.");}
+    return pImpl->mPhase;
 } 
 
-bool Arrival::havePhaseName() const noexcept
+bool Arrival::havePhase() const noexcept
 {
-    return !pImpl->mPhaseName.empty();
+    return !pImpl->mPhase.empty();
 }
 
 /// Get/set arrival time
-void Arrival::setTime(const double arrivalTime) noexcept
+void Arrival::setTime(const double time) noexcept
+{
+    auto iTime = static_cast<int64_t> (std::round(time*1.e6));
+    setTime(std::chrono::microseconds {iTime});
+}
+
+void Arrival::setTime(const std::chrono::microseconds &arrivalTime) noexcept
 {
     pImpl->mArrivalTime = arrivalTime;
     pImpl->mHaveArrivalTime = true;
 }
 
-double Arrival::getTime() const
+std::chrono::microseconds Arrival::getTime() const
 {
     if (!haveTime()){throw std::invalid_argument("Arrival time not set");}
     return pImpl->mArrivalTime;
@@ -138,50 +159,50 @@ bool Arrival::haveTime() const noexcept
     return pImpl->mHaveArrivalTime;
 }
 
-/// Polarity
-void Arrival::setPolarity(const MAssociate::Polarity polarity) noexcept
+/// First motion
+void Arrival::setFirstMotion(const Arrival::FirstMotion firstMotion) noexcept
 {
-    pImpl->mPolarity = polarity;
+    pImpl->mFirstMotion = firstMotion;
 }
 
-MAssociate::Polarity Arrival::getPolarity() const noexcept
+Arrival::FirstMotion Arrival::getFirstMotion() const noexcept
 {
-    return pImpl->mPolarity;
+    return pImpl->mFirstMotion;
 }
 
-/// Polarity weight
-void Arrival::setPolarityWeight(const double weight)
+/// First motion weight
+void Arrival::setFirstMotionWeight(const double weight)
 {
     if (weight < 0)
     {
         throw std::invalid_argument("weight must be positive");
     }
-    pImpl->mPolarityWeight = weight;
+    pImpl->mFirstMotionWeight = weight;
 }
 
-double Arrival::getPolarityWeight() const noexcept
+double Arrival::getFirstMotionWeight() const noexcept
 {
-    return pImpl->mPolarityWeight;
+    return pImpl->mFirstMotionWeight;
 }
 
-/// Standard deviation
-void Arrival::setStandardDeviation(const double std)
+/// Standard error
+void Arrival::setStandardError(const double standardError)
 {
-    if (std <= 0)
+    if (standardError <= 0)
     {
-        throw std::invalid_argument("Standard deviation must be positive");
+        throw std::invalid_argument("Standard error must be positive");
     }
-    pImpl->mStd = std;
+    pImpl->mStandardError = standardError;
 }
 
-double Arrival::getStandardDeviation() const noexcept
+double Arrival::getStandardError() const noexcept
 {
-    return pImpl->mStd;
+    return pImpl->mStandardError;
 }
 
 double Arrival::getWeight() const noexcept
 {
-    return 1/pImpl->mStd;
+    return 1.0/pImpl->mStandardError;
 }
 
 /// Waveform identifier 
@@ -191,7 +212,7 @@ void Arrival::setWaveformIdentifier(const WaveformIdentifier &waveid)
     {
         throw std::invalid_argument("waveform identifier is empty");
     }
-    pImpl->mWaveID = waveid;
+    pImpl->mWaveIdentifier= waveid;
 }
 
 MAssociate::WaveformIdentifier Arrival::getWaveformIdentifier() const
@@ -200,12 +221,12 @@ MAssociate::WaveformIdentifier Arrival::getWaveformIdentifier() const
     {
         throw std::runtime_error("waveform identifier not set");
     }
-    return pImpl->mWaveID;
+    return pImpl->mWaveIdentifier;
 }
 
 bool Arrival::haveWaveformIdentifier() const noexcept
 {
-    return !pImpl->mWaveID.isEmpty();
+    return !pImpl->mWaveIdentifier.isEmpty();
 }
 
 /// Identifier
@@ -224,17 +245,6 @@ uint64_t Arrival::getIdentifier() const
 bool Arrival::haveIdentifier() const noexcept
 {
     return pImpl->mHaveIdentifier;
-}
-
-/// Static correction
-void Arrival::setStaticCorrection(const double correction) noexcept
-{
-    pImpl->mStaticCorrection = correction;
-}
-
-double Arrival::getStaticCorrection() const noexcept
-{
-    return pImpl->mStaticCorrection;
 }
 
 /// Travel time
