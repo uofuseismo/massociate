@@ -1,47 +1,54 @@
 #include <vector>
+#include <chrono>
+#include <cmath>
 #include "massociate/event.hpp"
 #include "massociate/waveformIdentifier.hpp"
 #include "massociate/arrival.hpp"
-#include <gtest/gtest.h>
-namespace
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
+
+TEST_CASE("MAssociate::Event", "[event]")
 {
-TEST(MAssociator, Event)
-{
-    uint64_t evid = 5923;
-    double latitude = 40.7608;
-    double longitude =-111.8910;
-    double depth = 5000;
-    double originTime = 50;
-    double x = 2;
-    double y = 3;
-    double z = 4;
+    uint64_t evid{5923};
+    double latitude{40.7608};
+    double longitude{-111.8910};
+    double depth{5000};
+    double originTime{50};
+    //double x{2};
+    //double y{3};
+    //double z{4};
+    MAssociate::Event::Type type{MAssociate::Event::Type::Trigger};
+
     MAssociate::Arrival arrival;
     MAssociate::WaveformIdentifier waveid;
     MAssociate::Event event;
  
-    EXPECT_NO_THROW(event.setIdentifier(evid));
-    EXPECT_EQ(event.getIdentifier(), evid);
+    REQUIRE_NOTHROW(event.setIdentifier(evid));
+    REQUIRE(event.getIdentifier() == evid);
 
-    EXPECT_NO_THROW(event.setLatitude(latitude));
-    EXPECT_NEAR(event.getLatitude(), latitude, 1.e-10);
+    REQUIRE_NOTHROW(event.setLatitude(latitude));
+    REQUIRE(std::abs(event.getLatitude() - latitude) < 1.e-10);
 
-    EXPECT_NO_THROW(event.setLongitude(longitude));
-    EXPECT_NEAR(event.getLongitude(), longitude + 360, 1.e-10);
+    REQUIRE_NOTHROW(event.setLongitude(longitude));
+    REQUIRE(std::abs(event.getLongitude() - (longitude + 360)) < 1.e-10);
     event.setLongitude(event.getLongitude());
-    EXPECT_NEAR(event.getLongitude(), longitude + 360, 1.e-10);
+    REQUIRE(std::abs(event.getLongitude() - (longitude + 360)) < 1.e-10);
 
-    EXPECT_NO_THROW(event.setDepth(depth));
-    EXPECT_NEAR(event.getDepth(), depth, 1.e-10);
+    REQUIRE_NOTHROW(event.setDepth(depth));
+    REQUIRE(std::abs(event.getDepth() - depth) < 1.e-10);
 
-    EXPECT_NO_THROW(event.setOriginTime(originTime));
-    EXPECT_NEAR(event.getOriginTime(), originTime, 1.e-10);
+    REQUIRE_NOTHROW(event.setOriginTime(originTime));
+    REQUIRE(std::abs(event.getOriginTime().count()*1.e-6 - originTime) < 1.e-10);
 
-    event.setXPosition(x);
-    EXPECT_NEAR(event.getXPosition(), x, 1.e-14);
-    event.setYPosition(y);
-    EXPECT_NEAR(event.getYPosition(), y, 1.e-14);
-    event.setZPosition(z);
-    EXPECT_NEAR(event.getZPosition(), z, 1.e-14);
+    //event.setXPosition(x);
+    //REQUIRE(std::abs(event.getXPosition() - x) < 1.e-14);
+    //event.setYPosition(y);
+    //REQUIRE(std::abs(event.getYPosition() - y) < 1.e-14);
+    //event.setZPosition(z);
+    //REQUIRE(std::abs(event.getZPosition() - z) < 1.e-14);
+
+    event.setType(type);
+    REQUIRE(event.getType() == type);
 
     // Create some arrivals - check this is copy c'tor
     std::vector<MAssociate::Arrival> arrivals;
@@ -52,57 +59,58 @@ TEST(MAssociator, Event)
     arrival.setIdentifier(0);
     arrival.setTime(originTime + 4);
     arrival.setWaveformIdentifier(waveid);
-    arrival.setPhaseName("P");
+    arrival.setPhase("P");
     arrivals.push_back(arrival);
  
     waveid.setStation("VEC");
     arrival.setTime(originTime + 8);
     arrival.setWaveformIdentifier(waveid);
-    arrival.setPhaseName("S");
+    arrival.setPhase("S");
     arrival.setIdentifier(1);
     arrivals.push_back(arrival);
 
     waveid.setStation("COY");
     arrival.setTime(originTime + 6);
     arrival.setWaveformIdentifier(waveid);
-    arrival.setPhaseName("P");
+    arrival.setPhase("P");
     arrival.setIdentifier(2);
     arrivals.push_back(arrival);
     for (const auto &arrival : arrivals)
     {
-        EXPECT_NO_THROW(event.addArrival(arrival));
+        REQUIRE_NOTHROW(event.addArrival(arrival));
     }
-    EXPECT_EQ(event.getNumberOfArrivals(), 3);
-    EXPECT_EQ(event.getNumberOfPArrivals(), 2);
+    REQUIRE(event.getNumberOfArrivals() == 3);
+    REQUIRE(event.getNumberOfPArrivals() == 2);
     // Make some arrivals we can't add
     auto badArrivals = arrivals;
     badArrivals[0].setTime(originTime - 1); // Arrival before origin time
-    badArrivals[1].setPhaseName("P"); // P at S
-    badArrivals[2].setPhaseName("S"); // S at P
+    badArrivals[1].setPhase("P"); // P at S
+    badArrivals[2].setPhase("S"); // S at P
 
     // Copy c'tor
     MAssociate::Event eCopy(event);
-    EXPECT_EQ(eCopy.getIdentifier(), evid);
-    EXPECT_NEAR(eCopy.getLatitude(), latitude, 1.e-10);
-    EXPECT_NEAR(eCopy.getLongitude(), longitude + 360, 1.e-10);
-    EXPECT_NEAR(eCopy.getDepth(), depth, 1.e-10);
-    EXPECT_NEAR(eCopy.getOriginTime(), originTime, 1.e-10); 
-    EXPECT_NEAR(eCopy.getXPosition(), x, 1.e-14);
-    EXPECT_NEAR(eCopy.getYPosition(), y, 1.e-14);
-    EXPECT_NEAR(eCopy.getZPosition(), z, 1.e-14);
+    REQUIRE(eCopy.getIdentifier() == evid);
+    REQUIRE(std::abs(eCopy.getLatitude() - latitude) < 1.e-10);
+    REQUIRE(std::abs(eCopy.getLongitude()- (longitude + 360)) < 1.e-10);
+    REQUIRE(std::abs(eCopy.getDepth() - depth) < 1.e-10);
+    REQUIRE(std::abs(eCopy.getOriginTime().count()*1.e-6 - originTime) < 1.e-10); 
+    //REQUIRE(std::abs(eCopy.getXPosition() - x) < 1.e-14);
+    //REQUIRE(std::abs(eCopy.getYPosition() - y) < 1.e-14);
+    //REQUIRE(std::abs(eCopy.getZPosition() - z) < 1.e-14);
     auto arrivalsBack = eCopy.getArrivals(); 
     for (int ia=0; ia<static_cast<int> (arrivals.size()); ++ia)
     {
-        EXPECT_EQ(arrivalsBack[ia].getWaveformIdentifier(),
-                  arrivals[ia].getWaveformIdentifier());
-        EXPECT_EQ(arrivalsBack[ia].getPhaseName(), arrivals[ia].getPhaseName());
-        EXPECT_NEAR(arrivalsBack[ia].getTime(), arrivals[ia].getTime(), 1.e-14);
-        EXPECT_TRUE(eCopy.canAddArrival(arrivals[ia], true) >= 0);
-        EXPECT_TRUE(eCopy.canAddArrival(arrivals[ia], false) < 0);
-        EXPECT_TRUE(eCopy.canAddArrival(badArrivals[ia], true) < 0);
+        REQUIRE(arrivalsBack[ia].getWaveformIdentifier() ==
+                arrivals[ia].getWaveformIdentifier());
+        REQUIRE(arrivalsBack[ia].getPhase() == arrivals[ia].getPhase());
+        REQUIRE(arrivalsBack[ia].getTime() == arrivals[ia].getTime());
+        REQUIRE(eCopy.canAddArrival(arrivals[ia], true) >= 0);
+        REQUIRE(eCopy.canAddArrival(arrivals[ia], false) <= 0);
+        REQUIRE(eCopy.canAddArrival(badArrivals[ia], true) < 0);
     }
     event.clearArrivals();
-    EXPECT_EQ(event.getNumberOfArrivals(), 0);
+    REQUIRE(event.getNumberOfArrivals() == 0);
+    event.clear();
+    REQUIRE(event.getType() == MAssociate::Event::Type::Event);
 }
 
-}

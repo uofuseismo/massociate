@@ -1,452 +1,254 @@
-#include <vector>
-#include <cmath>
-#include "massociate/migrationParameters.hpp"
-#include "massociate/migrate.hpp"
-#include "massociate/pick.hpp"
+#include <iostream>
+#ifndef NDEBUG
+#include <cassert>
+#endif
+#include <uLocator/travelTimeCalculatorMap.hpp>
+#include <uLocator/station.hpp>
+#include <uLocator/uussRayTracer.hpp>
+#include <uLocator/position/ynpRegion.hpp>
+#include <uLocator/position/utahRegion.hpp>
+#include <uLocator/position/wgs84.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
+#include "massociate/migrator.hpp"
+#include "massociate/arrival.hpp"
+#include "massociate/event.hpp"
 #include "massociate/waveformIdentifier.hpp"
-#include "private/analyticSignals.hpp"
-#include "utilities.hpp"
-#include <gtest/gtest.h>
+#include "analyticSignals.hpp"
+#include "massociate/particleSwarm.hpp"
+#include "massociate/dividedRectangles.hpp"
+#include "examples.hpp"
 
-namespace
-{
-/// @brief Simple direct correlation.
-/// @param[in] g1   The first signal.
-/// @param[in] g2   The second signal.
-/// @result \f$ g1 \star g2 \f$ where the convention is the max of the 
-///         correlation will shift g1 so that it best aligns with g2.
-/// @throws std::invalid_argument if g1.size() != g2.size().
-template<typename T>
-std::vector<T> simpleDirectCorrelation(const std::vector<T> &g1,
-                                       const std::vector<T> &g2,
-                                       double dt = 1);
-
-TEST(MAssociate, MigrationParameters)
-{
-    MAssociate::MigrationParameters parameters;
-    int nTables = 5;
-    int nPoints = 110;
-    int tileSize = 90;
-    //int dbscanClusterSize = 5;
-    //double dbscanEpsilon = 0.3;
-    auto function = MAssociate::AnalyticCorrelationFunction::BOXCAR;
-
-    EXPECT_NO_THROW(parameters.setNumberOfPointsInTravelTimeTable(nPoints));
-    EXPECT_EQ(parameters.getNumberOfPointsInTravelTimeTable(), nPoints);
-
-    EXPECT_NO_THROW(parameters.setNumberOfTravelTimeTables(nTables));
-    EXPECT_EQ(parameters.getNumberOfTravelTimeTables(), nTables);
-
-    EXPECT_NO_THROW(parameters.setTileSize(tileSize));
-    EXPECT_EQ(parameters.getTileSize(), tileSize);
-    EXPECT_NO_THROW(parameters.setTileSize(nPoints + 1));
-    EXPECT_EQ(parameters.getTileSize(), nPoints);
-
-    parameters.setAnalyticCorrelationFunction(function);
-    EXPECT_EQ(parameters.getAnalyticCorrelationFunction(), function);
-    //EXPECT_NO_THROW(parameters.setDBSCANEpsilon(dbscanEpsilon));
-    //EXPECT_NEAR(parameters.getDBSCANEpsilon(), dbscanEpsilon, 1.e-12);
-    //EXPECT_NO_THROW(parameters.setDBSCANMinimumClusterSize(dbscanClusterSize));
-    //EXPECT_EQ(parameters.getDBSCANMinimumClusterSize(), dbscanClusterSize);
-
-    MAssociate::MigrationParameters pCopy(parameters);
-    EXPECT_EQ(pCopy.getNumberOfPointsInTravelTimeTable(), nPoints);
-    EXPECT_EQ(pCopy.getNumberOfTravelTimeTables(), nTables);
-    EXPECT_EQ(pCopy.getTileSize(), nPoints);
-    EXPECT_EQ(pCopy.getAnalyticCorrelationFunction(), function);
-    //EXPECT_NEAR(pCopy.getDBSCANEpsilon(), dbscanEpsilon, 1.e-12);
-    //EXPECT_EQ(pCopy.getDBSCANMinimumClusterSize(), dbscanClusterSize);
-
-    parameters.clear();
-}
-
-TEST(MAssociate, AnalyticGaussianCorrelation)
-{
-    double tmin = 0;
-    double tmax = 5;
-    double dt = 0.01;
-    double p1 = 1.3;  // P pick time
-    double p2 = 2.1;  // S pick time
-    double sd1 = 0.08; // P wave standard deviation
-    double sd2 = 0.20; // S wave stadnard deviation
-    auto npts = static_cast<int> ( std::round((tmax - tmin)/dt) ) + 1;
-    // Create Gaussian signals to correlate
-    std::vector<double> times(npts, 0);
-    std::vector<double> g1(npts, 0);
-    std::vector<double> g2(npts, 0);
-    auto xnorm1 = 1./(sd1*sqrt(2*M_PI));
-    auto xnorm2 = 1./(sd2*sqrt(2*M_PI));
-    for (int i=0; i<npts; ++i)
-    {
-        times[i] = tmin + i*dt;
-        g1[i] = xnorm1*exp( -(pow(times[i] - p1, 2))/(2*sd1*sd1) );
-        g2[i] = xnorm2*exp( -(pow(times[i] - p2, 2))/(2*sd2*sd2) );
-    }
-    // Compute correlation times
-    int xcLen = 2*npts - 1;
-    auto xc = simpleDirectCorrelation(g1, g2);
-    // Correlation is defined in samples but approximates an integral hence
-    // we need a normalization.
-    for (int i=0; i<xc.size(); ++i){xc[i] = dt*xc[i];}
-    std::vector<double> xcAnalytic(xcLen, 0);
-    std::vector<double> xcTimes(xcLen, 0);
-    auto xnormAmp = analyticGaussianCorrelationAmplitudeNormalization(sd1, sd2);
-    auto xnormExp = analyticGaussianCorrelationExponentNormalization(sd1, sd2);
-//std::cout << xnormAmp << std::endl;
-//std::cout << xnormExp << std::endl;
-    for (int i=0; i<xcLen; ++i)
-    {
-        xcTimes[i] =-tmax + i*dt;
-        xcAnalytic[i] = analyticGaussianCorrelation(xcTimes[i], p1, p2,
-                                                    xnormAmp, xnormExp);
-        EXPECT_NEAR(xcAnalytic[i], xc[i], 1.e-7);
-        //std::cout << xcTimes[i] << "," << xc[i] << "," <<  xcAnalytic[i] << std::endl;
-    }
-    auto error = infinityNorm(xcLen, xc.data(), xcAnalytic.data());
-    EXPECT_NEAR(error, 0, 1.e-7);
-}
-
-TEST(MAssociate, AnalyticBoxcar)
-{
-    double tmin = 0;
-    double tmax = 5;
-    double dt = 0.01;
-    double p1 = 0.5;  // P pick time
-    double p2 = 2.1;  // S pick time
-    double w1 = 2*0.08; // P wave width
-    double w2 = 2*0.20;// S wave width
-    auto npts = static_cast<int> ( std::round((tmax - tmin)/dt) ) + 1;
-    // P pick leads and S pick and have different widths
-    std::vector<double> times(npts, 0);
-    std::vector<double> b1(npts, 0);
-    std::vector<double> b2(npts, 0);
-    for (int i=0; i<npts; ++i)
-    {
-        times[i] = tmin + i*dt;
-        if (times[i] >= p1 - w1/2 && times[i] < p1 + w1/2){b1[i] = 1/w1;}
-        if (times[i] >= p2 - w2/2 && times[i] < p2 + w2/2){b2[i] = 1/w2;}
-    }
-    int xcLen = 2*npts - 1;
-    auto xc = simpleDirectCorrelation(b1, b2, dt);
-    std::vector<double> xcAnalytic(xcLen, 0);
-double xsum =0;
-    for (int i=0; i<xcLen; ++i)
-    {
-        double deltaT =-tmax + i*dt;
-        xcAnalytic[i] = analyticBoxcarCorrelation(deltaT, p1, p2, w1, w2);
-xsum = xsum + xcAnalytic[i]*dt;
 /*
-if (xc[i] > 1.e-8 || xcAnalytic[i] > 1.e-8)
+std::pair<MAssociate::Arrival, ULocator::Station>
+    toArrival(const int64_t identifier,
+              const std::string &network,
+                              const std::string &station,
+                              const std::string &phase,
+                              const double time,
+                              const double standardError2,
+                              const double stationLatitude,
+                              const double stationLongitude,
+                              const double stationElevation,
+                              const bool isUtah = true,
+                              const int utmZone = 12)
 {
-   std::cout << times[i] << " " << xc[i] << " " << xcAnalytic[i] << " " << xc[i]/xcAnalytic[i] << std::endl;
-}
-*/
-    }
-//std::cout << xsum << std::endl;
-    auto error = infinityNorm(xc.size(), xc.data(), xcAnalytic.data());
-    EXPECT_NEAR(error, 0, 1.e-10);
-    //std::cout << "Error: " << error << std::endl;
-    // Put first pick after second pick same width
-    p1 = 3.1;
-    p2 = 2;
-    w1 = 0.1;
-    w2 = 0.1;
-    std::fill(b1.begin(), b1.end(), 0);
-    std::fill(b2.begin(), b2.end(), 0);
-    for (int i=0; i<npts; ++i)
+    MAssociate::WaveformIdentifier waveformIdentifier;
+    waveformIdentifier.setNetwork(network);
+    waveformIdentifier.setStation(station);
+    MAssociate::Arrival arrival;
+    arrival.setIdentifier(identifier);
+    arrival.setWaveformIdentifier(waveformIdentifier);
+    arrival.setPhase(phase);
+    arrival.setTime(time);
+    arrival.setStandardError(standardError2);
+
+    ULocator::Station uStation;
+    uStation.setNetwork(network);
+    uStation.setName(station);
+    uStation.setElevation(stationElevation);
+    ULocator::Position::WGS84 stationLocation{stationLatitude, stationLongitude, utmZone};
+    if (isUtah)
     {
-        if (times[i] >= p1 - w1/2 && times[i] < p1 + w1/2){b1[i] = 1/w1;}
-        if (times[i] >= p2 - w2/2 && times[i] < p2 + w2/2){b2[i] = 1/w2;}
+        uStation.setGeographicPosition(stationLocation,
+                                       ULocator::Position::UtahRegion {});
     }
-    xc = simpleDirectCorrelation(b1, b2, dt);
-    for (int i=0; i<xcLen; ++i)
+    else
     {
-        double deltaT =-tmax + i*dt;
-        xcAnalytic[i] = analyticBoxcarCorrelation(deltaT, p1, p2, w1, w2); 
-/*
-if (xc[i] > 1.e-8 || xcAnalytic[i] > 1.e-8)
-{
-   std::cout << times[i] << " " << xc[i] << " " << xcAnalytic[i] << " " << xc[i]/xcAnalytic[i] << std::endl;
-}
-*/
+        uStation.setGeographicPosition(stationLocation,
+                                       ULocator::Position::YNPRegion {});
     }
-    error = infinityNorm(xc.size(), xc.data(), xcAnalytic.data());
-    EXPECT_NEAR(error, 0, 1.e-10);
-    //std::cout << "Error: " << error << std::endl;
-    // Another thing is first pick after second pick but different widths
-    p2 = 1.9;
-    p1 = 1.6;
-    w1 = 0.1;
-    w2 = 0.2;
-    std::fill(b1.begin(), b1.end(), 0);
-    std::fill(b2.begin(), b2.end(), 0);
-    for (int i=0; i<npts; ++i)
-    {
-        if (times[i] >= p1 - w1/2 && times[i] < p1 + w1/2){b1[i] = 1/w1;}
-        if (times[i] >= p2 - w2/2 && times[i] < p2 + w2/2){b2[i] = 1/w2;}
-    }
-    xc = simpleDirectCorrelation(b1, b2, dt);
-    for (int i=0; i<xcLen; ++i)
-    {
-        double deltaT =-tmax + i*dt;
-        xcAnalytic[i] = analyticBoxcarCorrelation(deltaT, p1, p2, w1, w2);
-    }
-    error = infinityNorm(xc.size(), xc.data(), xcAnalytic.data());
-    EXPECT_NEAR(error, 0, 1.e-10);
-    //std::cout << "Error: " << error << std::endl;
+    return std::pair {arrival, uStation};
 }
 
-TEST(MAssociate, Migrate)
+struct CreateTestCase60557072
 {
-    const double sqrt12 = std::sqrt(12.);
-    MAssociate::Migrate<float> migrate;
-    MAssociate::Migrate<double> migrateGauss;
-    std::string network = "FK";
-    std::string channel = "HHZ";
-    std::string location = "01";
-    MAssociate::WaveformIdentifier sncl;
-    MAssociate::MigrationParameters parameters;
-    sncl.setNetwork(network);
-    sncl.setChannel(channel);
-    sncl.setLocationCode(location);
-    int nx = 41;
-    int ny = 43;
-    int nz = 10;
-    double x0 = 0;
-    double y0 = 0;
-    double z0 = 0;
-    double dx = 1000;
-    double dy = 1000;
-    double dz = 1000;
-    double vp = 4000;
-    double vs = 2200;
-    double pStaticCorrection =-0.05;
-    double sStaticCorrection = 0.05;
-    int nrec = 11;
-    int isrcx = 15;
-    int isrcy = 37;
-    int isrcz = 7;
-    int isrc = isrcz*nx*ny + isrcy*nx + isrcx;
-    auto xs = x0 + dx*isrcx;
-    auto ys = y0 + dy*isrcy;
-    auto zs = z0 + dz*isrcz;
-    auto ot = 25;
-    auto irecx = generateUniformRandomNumbers(nrec, 0, nx - 1, 4993);
-    auto irecy = generateUniformRandomNumbers(nrec, 0, ny - 1, 4995);
-    std::vector<int> irecz(nrec, 0); // Put all these at surface
-    // Create the migration parameters
-    parameters.setNumberOfTravelTimeTables(2*nrec);
-    parameters.setNumberOfPointsInTravelTimeTable(nx*ny*nz);
-    parameters.setTileSize(512);
-    parameters.setAnalyticCorrelationFunction(
-         MAssociate::AnalyticCorrelationFunction::BOXCAR);
-    EXPECT_NO_THROW(migrate.initialize(parameters));
-    // -> Gaussian
-    parameters.setAnalyticCorrelationFunction(
-         MAssociate::AnalyticCorrelationFunction::GAUSSIAN);
-    EXPECT_NO_THROW(migrateGauss.initialize(parameters));
-    // Create the travel time tables 
-    for (int i=0; i<nrec; ++i)
+    CreateTestCase60557072(bool addNoisePicks = false)
     {
-        EXPECT_FALSE(migrate.haveAllTravelTimeTables());
-        std::string station = "T" + std::to_string(i + 1);
-        auto xr = x0 + irecx[i]*dx;
-        auto yr = y0 + irecy[i]*dy;
-        auto zr = z0 + irecz[i]*dz;
-        auto ptable = makeTravelTimeTable(xr, yr, zr, dx, dy, dz, nx, ny, nz,
-                                          vp, x0, y0, z0);
-        auto stable = makeTravelTimeTable(xr, yr, zr, dx, dy, dz, nx, ny, nz,
-                                          vs, x0, y0, z0);
-        migrate.setTravelTimeTable(network, station, "P",
-                                   ptable.size(), ptable.data());
-        migrate.setTravelTimeTable(network, station, "S",
-                                   stable.size(), stable.data());
-        migrateGauss.setTravelTimeTable(network, station, "P",
-                                        ptable.size(), ptable.data());
-        migrateGauss.setTravelTimeTable(network, station, "S",
-                                        stable.size(), stable.data());
-    }
-    EXPECT_TRUE(migrate.haveAllTravelTimeTables());
-    // Figure out max dt
-    auto maxDT = migrate.getMaximumDifferentialTravelTime();
-    float dtMaxRef = 0;
-    for (int i=0; i<nrec; ++i)
-    {
-        std::string station = "T" + std::to_string(i + 1);
-        std::vector<std::string> phases({"P", "S"});
-        for (int ip=0; ip<2; ++ip)
+        auto [a1,  s1]  = ::toArrival(1,  "UU", "KNB",  "P", 1703612966.086906, 0.066805, 37.0166,-112.822,  1715.0, true, 12);
+        auto [a2,  s2]  = ::toArrival(2,  "AE", "U15A", "P", 1703612967.977675, 0.102402, 36.428, -112.2915, 2489.0, true, 12);
+        auto [a3,  s3]  = ::toArrival(3,  "UU", "LCMT", "P", 1703612971.257604, 0.065439, 37.0118,-113.2439, 1411.0, true, 12);
+        auto [a4,  s4]  = ::toArrival(4,  "UU", "KNB",  "S", 1703612971.659966, 0.131456, 37.0166,-112.822,  1715.0, true, 12);
+        auto [a5,  s5]  = ::toArrival(5,  "UU", "ZNPU", "P", 1703612972.431031, 0.072258, 37.3561,-113.1254, 1953.0, true, 12);
+        auto [a6,  s6]  = ::toArrival(6,  "AE", "U15A", "S", 1703612974.938671, 0.185014, 36.428, -112.2915, 2489.0, true, 12);
+        auto [a7,  s7]  = ::toArrival(7,  "UU", "SZCU", "P", 1703612975.187562, 0.312345, 37.5954,-113.0875, 2026.0, true, 12);
+        auto [a8,  s8]  = ::toArrival(8,  "UU", "LCMT", "S", 1703612980.490127, 0.196639, 37.0118,-113.2439, 1411.0, true, 12);
+        auto [a9,  s9]  = ::toArrival(9,  "UU", "ZNPU", "S", 1703612982.488189, 0.30128,  37.3561,-113.1254, 1953.0, true, 12);
+        auto [a10, s10] = ::toArrival(10, "UU", "BHU",  "S", 1703612985.001897, 0.200406, 37.5939,-112.8621, 3250.0, true, 12);
+        auto [a11, s11] = ::toArrival(11, "UU", "SZCU", "S", 1703612986.842699, 0.192562, 37.5954,-113.0875, 2026.0, true, 12);
+        auto [a12, s12] = ::toArrival(12, "US", "WUAZ", "P", 1703612986.500783, 0.26241,  35.5169,-111.3739, 1592.0, true, 12); // Big residual so I moved it
+        arrivals = std::vector {a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12};
+        stations = std::vector {s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12};
+        if (addNoisePicks)
         {
-            auto t1 = migrate.getTravelTimeTable(network, station, phases[ip]);
-            for (int j=i+1; j<nrec; ++j)
+            auto [a13, s13] = ::toArrival(13, "UU", "KNB",  "P", 1703612936.086906, 0.066805, 37.0166,-112.822,  1715.0, true, 12);
+            auto [a14, s14] = ::toArrival(14, "AE", "U15A", "S", 1703612901.938671, 0.185014, 36.428, -112.2915, 2489.0, true, 12);
+            auto [a15, s15] = ::toArrival(15, "US", "WUAZ", "P", 1703612917.500783, 0.26241,  35.5169,-111.3739, 1592.0, true, 12);
+            arrivals.push_back(a13);
+            arrivals.push_back(a14);
+            arrivals.push_back(a15);
+            stations.push_back(s13);
+            stations.push_back(s14);
+            stations.push_back(s15);
+        }
+        for (int i = 0; i < static_cast<int> (arrivals.size()); ++i)
+        {
+            auto [xSource, ySource] = region.geographicToLocalCoordinates(eventLatitude, eventLongitude);
+            constexpr bool applyCorrection{true};
+            if (arrivals.at(i).getPhase() == "P")
             {
-                std::string station = "T" + std::to_string(j + 1);
-                for (int jp=0; jp<2; ++jp)
+                if (!travelTimeCalculatorMap->contains(stations[i], "P"))
                 {
-                    auto t2 = migrate.getTravelTimeTable(network, station,
-                                                         phases[jp]);
-                    //#pragma omp simd reduction(max:dtMaxRef)
-                    for (int k=0; k<static_cast<int> (t2.size()); ++k)
-                    {
-                        dtMaxRef = std::max(dtMaxRef, std::abs(t2[k] - t1[k]));
-                    }
+                    std::unique_ptr<ULocator::ITravelTimeCalculator> pCalculator
+                       = std::make_unique<ULocator::UUSSRayTracer>
+                         (stations.at(i),
+                          ULocator::UUSSRayTracer::Phase::P,
+                          ULocator::UUSSRayTracer::Region::Utah);
+                    travelTimes.push_back(pCalculator->evaluate(
+                        0.0, xSource, ySource, eventDepth, applyCorrection));
+                    travelTimeCalculatorMap->insert(stations[i], "P",
+                                                    std::move(pCalculator));
+                }
+            }
+            else
+            {
+                if (!travelTimeCalculatorMap->contains(stations[i], "S"))
+                {
+                    std::unique_ptr<ULocator::ITravelTimeCalculator> sCalculator
+                       = std::make_unique<ULocator::UUSSRayTracer>
+                         (stations.at(i),
+                          ULocator::UUSSRayTracer::Phase::S,
+                          ULocator::UUSSRayTracer::Region::Utah);
+                    travelTimes.push_back(sCalculator->evaluate(
+                        0.0, xSource, ySource, eventDepth, applyCorrection));
+                    travelTimeCalculatorMap->insert(stations[i], "S",
+                                                    std::move(sCalculator));
                 }
             }
         }
+#ifndef NDEBUG
+        assert(arrivals.size() == travelTimes.size());
+#endif
     }
-    EXPECT_NEAR(dtMaxRef, maxDT, 1.e-4);
-    // Verify I can get the tables back
-    // Create the travel time tables and a list of picks
-    for (int i=0; i<nrec; ++i)
-    {
-        std::string station = "T" + std::to_string(i + 1);
-        auto xr = x0 + irecx[i]*dx;
-        auto yr = y0 + irecy[i]*dy;
-        auto zr = z0 + irecz[i]*dz;
-        auto pTableRef = makeTravelTimeTable(xr, yr, zr, dx, dy, dz, nx, ny, nz,
-                                             vp, x0, y0, z0);
-        auto sTableRef = makeTravelTimeTable(xr, yr, zr, dx, dy, dz, nx, ny, nz,
-                                             vs, x0, y0, z0);
-        // Get the tables
-        auto pTable = migrate.getTravelTimeTable(network, station, "P");
-        auto sTable = migrate.getTravelTimeTable(network, station, "S");
-        EXPECT_EQ(pTableRef.size(), pTable.size());
-        EXPECT_EQ(sTableRef.size(), sTable.size());
-        EXPECT_LT(infinityNorm(pTable.size(), pTableRef.data(), pTable.data()),
-                  1.e-6);
-        EXPECT_LT(infinityNorm(sTable.size(), sTableRef.data(), sTable.data()), 
-                  1.e-6);
-    }
-    // Add the picks
-    std::vector<MAssociate::Pick> picks;
-    int nPicks = 0;
-    for (int i=0; i<nrec; ++i)
-    {
-        std::string station = "T" + std::to_string(i + 1);
-        sncl.setStation(station);
-        auto xr = x0 + irecx[i]*dx;
-        auto yr = y0 + irecy[i]*dy;
-        auto zr = z0 + irecz[i]*dz;
-        double pTime = computeTravelTime(xr, yr, zr, xs, ys, zs, vp)
-                     + ot + pStaticCorrection;
-        double sTime = computeTravelTime(xr, yr, zr, xs, ys, zs, vs)
-                     + ot + sStaticCorrection;
-        MAssociate::Pick pick;
-        pick.setIdentifier(nPicks);
-        pick.setWaveformIdentifier(sncl);
-        pick.setTime(pTime);
-        pick.setPhaseName("P");
-        pick.setStandardDeviation(0.2/sqrt12);
-        pick.setStaticCorrection(pStaticCorrection);
-        EXPECT_NO_THROW(migrate.addPick(pick));
-        picks.push_back(pick);
-        nPicks = nPicks + 1;        
-        if (i%2 == 0)
-        {
-            pick.setIdentifier(nPicks);
-            pick.setTime(sTime);
-            pick.setPhaseName("S");
-            pick.setStandardDeviation(0.4/sqrt12);
-            pick.setStaticCorrection(sStaticCorrection);
-            EXPECT_NO_THROW(migrate.addPick(pick));
-            picks.push_back(pick);
-            nPicks = nPicks + 1;
-        }
-    }
-    EXPECT_EQ(migrate.getNumberOfPicks(), nPicks);
-    // There is no reason to pop any picks because of causality in this
-    // example so do a straight sum of the migration contribution for all pairs
-    double sumGaussian = 0;
-    double sumBoxcar = 0;
-    for (int ia=0; ia<static_cast<int> (picks.size()); ++ia)
-    {
-        EXPECT_NO_THROW(migrateGauss.addPick(picks[ia]));
-        for (int ja=ia+1; ja<static_cast<int> (picks.size()); ++ja)
-        {
-            double std1 = picks[ia].getStandardDeviation();
-            double std2 = picks[ja].getStandardDeviation();
-            // Perfect data
-            double deltaT = 0;
-            double p1 = 0;
-            double p2 = 0;
-            auto normalizeAmp
-                = analyticGaussianCorrelationAmplitudeNormalization(std1, std2);
-            auto normalizeExp
-                = analyticGaussianCorrelationExponentNormalization(std1, std2);
-            auto boxcarWeight1 = std::sqrt(12.)*std1;
-            auto boxcarWeight2 = std::sqrt(12.)*std2;
-            sumGaussian = sumGaussian
-                        + analyticGaussianCorrelation(deltaT, p1, p2,
-                                                      normalizeAmp,
-                                                      normalizeExp);
-            sumBoxcar = sumBoxcar
-                      + analyticBoxcarCorrelation(deltaT, p1, p2,
-                                                  boxcarWeight1, boxcarWeight2);
-        }
-    }
-    // Migrate
-    EXPECT_NO_THROW(migrate.migrate());
-    auto imageMax = migrate.getImageMaximum();
-    auto ttimesToMax = migrate.getTravelTimesToMaximum();
-    EXPECT_EQ(imageMax.first, isrc);
-    EXPECT_NEAR(imageMax.second, sumBoxcar, 2.e-3); // 477.5*1.e-6 is mach eps
-    for (int ia=0; ia<static_cast<int> (picks.size()); ++ia)
-    {
-        auto waveid = picks[ia].getWaveformIdentifier();
-        // Note that there is no static correction 
-        auto tEst = migrate.getTravelTime(waveid.getNetwork(),
-                                          waveid.getStation(),
-                                          picks[ia].getPhaseName(),
-                                          imageMax.first);
-        tEst = tEst + picks[ia].getStaticCorrection(); // Fix the static correction
-        auto tObs = picks[ia].getTime();
-        EXPECT_NEAR(tObs - ot, tEst, 1.e-4);
-        EXPECT_NEAR(ttimesToMax[ia], tObs - ot, 1.e-4);
-    }
-    // Migrate Gaussian
-    EXPECT_NO_THROW(migrateGauss.migrate());
-    imageMax = migrateGauss.getImageMaximum();
-    EXPECT_EQ(imageMax.first, isrc);
-    EXPECT_NEAR(imageMax.second, sumGaussian, 1.e-3); // 509.329*1.e-6 -> 1.e-3
-    // Clear the picks
-    migrate.clearPicks();
-    EXPECT_EQ(migrate.getNumberOfPicks(), 0);
-}
+    std::vector<ULocator::Station> stations;
+    std::vector<MAssociate::Arrival> arrivals;
+    std::vector<double> travelTimes;
+    std::unique_ptr<ULocator::TravelTimeCalculatorMap>
+        travelTimeCalculatorMap{
+            std::make_unique<ULocator::TravelTimeCalculatorMap> ()};
+    ULocator::Position::UtahRegion region;  
+    int64_t eventIdentifier{60557072};
+    double eventLatitude{36.8758333};
+    double eventLongitude{-112.4343333};
+    double eventDepth{20200.0};
+    double eventTime{1703612958.6499996};
+};
+*/
 
-
-template<typename T>
-std::vector<T> simpleDirectCorrelation(const std::vector<T> &g1,
-                                       const std::vector<T> &g2,
-                                       const double dt)
+TEST_CASE("MAssociate::IMigrator", "BaseClass")
 {
-    if (g1.size() != g2.size())
+    constexpr bool addNoise{false};
+    CreateTestCase60557072 test{addNoise};
+
+    MAssociate::IMigrator migrator;
+    migrator.setGeographicRegion(test.region);
+    migrator.setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap));
+    migrator.setArrivals(test.arrivals);
+    migrator.setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar);
+    auto [x, y]
+        = test.region.geographicToLocalCoordinates(
+             test.eventLatitude, test.eventLongitude);
+    double imageReference{0};
+    for (size_t i = 0; i < test.arrivals.size(); ++i)
     {
-        throw std::invalid_argument("Only does g1.size() == g2.size()");
-    }
-    auto npts = static_cast<int> (g1.size());
-    auto xclen = 2*npts - 1;
-    // Cross-correlate manually - use same convention as IPP which asks:
-    // What is the shift that moves g1 to best align to g2?
-    std::vector<T> xc(xclen, 0);
-    std::vector<T> awork(xclen, 0);
-    for (int i=0; i<npts; i++)
-    {
-        auto k = npts - 1 - i;
-        awork[i] = g2[k];
-    }
-    for (int i=1; i<=xclen; i++)
-    {
-        auto kmin = std::max(0, i-npts);
-        auto kmax = std::min(i - 1, npts - 1);
-        for (int k=kmin; k<=kmax; k++)
+        for (size_t j = i + 1; j < test.arrivals.size(); ++j)
         {
-            xc[xclen-i] = xc[xclen-i] + g1[k]*awork[i-k-1];
+            auto tObserved1 = test.arrivals.at(i).getTime().count()*1.e-6;
+            auto tObserved2 = test.arrivals.at(j).getTime().count()*1.e-6;
+            auto tEstimated1 = test.travelTimes.at(i);
+            auto tEstimated2 = test.travelTimes.at(j);
+            auto weight1 = std::sqrt(3)*test.arrivals.at(i).getStandardError();
+            auto weight2 = std::sqrt(3)*test.arrivals.at(j).getStandardError();
+            imageReference = imageReference 
+                           + ::analyticBoxcarCorrelation(
+                                  tObserved1, tObserved2,
+                                  tEstimated1, tEstimated2,
+                                  weight1, weight2); 
         }
     }
-    if (dt != 1)
-    {
-        for (int i=0; i<static_cast<int> (xc.size()); ++i){xc[i] = dt*xc[i];}
-    }
-    return xc;
+    auto image = migrator.evaluate(x, y, test.eventDepth);
+    REQUIRE(std::abs(image - imageReference) < 0.001);
 }
 
+TEST_CASE("Massociate::Optimizer", "[ParticleSwarm]")
+{
+    SECTION("No noise")
+    {
+    constexpr bool addNoisePicks{false};
+    CreateTestCase60557072 test(addNoisePicks);
+
+    auto migrator = std::make_unique<MAssociate::IMigrator> ();
+    REQUIRE_NOTHROW(migrator->setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap)));
+    REQUIRE_NOTHROW(migrator->setGeographicRegion(test.region));
+    REQUIRE_NOTHROW(migrator->setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar));
+    REQUIRE_NOTHROW(migrator->setMaximumEpicentralDistance(450000));
+ 
+    CHECK(migrator->getPickSignalToMigrate() == MAssociate::IMigrator::PickSignal::Boxcar);
+    CHECK(std::abs(migrator->getMaximumEpicentralDistance() - 450000) < 0.1);
+
+    MAssociate::ParticleSwarm pso;
+    REQUIRE_NOTHROW(pso.setMigrator(std::move(migrator)));
+    std::vector<MAssociate::Arrival> reverseArrivals(test.arrivals.size());
+    std::reverse_copy(test.arrivals.begin(), test.arrivals.end(), reverseArrivals.begin());
+    REQUIRE_NOTHROW(pso.setArrivals(test.arrivals));
+    REQUIRE_NOTHROW(pso.setDepth(20000)); 
+    
+    pso.optimize(); 
+    REQUIRE(pso.haveOptimum());
+    auto bestHypocenter = pso.getOptimalHypocenter();
+    CHECK(std::abs(std::get<0> (bestHypocenter) - test.eventLatitude) < 0.25);
+    CHECK(std::abs(std::get<1> (bestHypocenter) - test.eventLongitude) < 0.25);
+    CHECK(std::abs(std::get<2> (bestHypocenter) - pso.getDepth()) < 1);
+    CHECK(pso.getContributingArrivals().size() == test.arrivals.size());
+    
+    pso.setArrivals(reverseArrivals); 
+    pso.optimize();
+//pso.setNumberOfParticles(25);
+    REQUIRE(pso.haveOptimum());
+    bestHypocenter = pso.getOptimalHypocenter();
+    CHECK(std::abs(std::get<0> (bestHypocenter) - test.eventLatitude) < 0.25);
+    CHECK(std::abs(std::get<1> (bestHypocenter) - test.eventLongitude) < 0.25);
+    CHECK(std::abs(std::get<2> (bestHypocenter) - pso.getDepth()) < 1);
+    CHECK(pso.getContributingArrivals().size() == test.arrivals.size());
+    //double eventDepth{2022.0};
+    //double eventTime{1703612958.6499996
+    //std::cout << event.getLatitude() <<  " " << event.getLongitude() - 360 << " " << " " << event.getOriginTime().count()*1.e-6 << std::endl;
+    }
+
+    SECTION("With Noise Picks")
+    {
+    constexpr bool addNoisePicks{true};
+    CreateTestCase60557072 test(addNoisePicks);
+
+    auto migrator = std::make_unique<MAssociate::IMigrator> (); 
+    migrator->setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap));
+    migrator->setGeographicRegion(test.region);
+    migrator->setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar);
+    migrator->setMaximumEpicentralDistance(250000);
+
+    MAssociate::ParticleSwarm pso;
+    pso.setMigrator(std::move(migrator));
+    pso.setArrivals(test.arrivals);
+    pso.setDepth(20000);
+    
+    pso.optimize(); 
+    //REQUIRE(pso.haveOptimum());
+    auto [bestLatitude, bestLongitude, bestDepth] = pso.getOptimalHypocenter();
+    CHECK(std::abs(bestLatitude  - test.eventLatitude) < 0.25);
+    CHECK(std::abs(bestLongitude - test.eventLongitude) < 0.25);
+    CHECK(std::abs(bestDepth     - pso.getDepth()) < 1);
+
+std::cout << bestLatitude << " " << bestLongitude << " " << bestDepth << std::endl;
+std::cout << pso.getContributingArrivals().size() << std::endl;
+    }
 }
