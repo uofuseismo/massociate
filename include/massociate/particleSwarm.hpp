@@ -1,6 +1,8 @@
 #ifndef MASSOCIATE_PARTICLE_SWARM_HPP
 #define MASSOCIATE_PARTICLE_SWARM_HPP
 #include <memory>
+#include <massociate/optimizer.hpp>
+#include <umps/logging/log.hpp>
 namespace MAssociate
 {
  class IMigrator;
@@ -16,31 +18,42 @@ public:
 private:
 
 };
-class ParticleSwarm
+class ParticleSwarm : public IOptimizer
 {
 public:
     /// @brief Constructor.
     ParticleSwarm();
+    explicit ParticleSwarm(std::shared_ptr<UMPS::Logging::ILog> &logger);
 
     /// @brief Sets the migration engine.
-    void setMigrator(std::unique_ptr<IMigrator> &&migrator);
+    //void setMigrator(std::unique_ptr<IMigrator> &&migrator);
     /// @result Releases the migration engine.
-    [[nodiscard]] std::unique_ptr<IMigrator> releaseMigrator(); 
+    //[[nodiscard]] std::unique_ptr<IMigrator> releaseMigrator(); 
     /// @result True indicates the migration engine was set.
-    [[nodiscard]] bool haveMigrator() const noexcept;
+    //[[nodiscard]] bool haveMigrator() const noexcept;
 
     /// @brief Sets the arrivals.
     /// @throws std::invalid_argument if \c haveMigrator() is false.
-    void setArrivals(const std::vector<Arrival> &arrivals);
+    //void setArrivals(const std::vector<Arrival> &arrivals);
     /// @result True indicates the arrivals were set.
-    [[nodiscard]] bool haveArrivals() const noexcept;
+    //[[nodiscard]] bool haveArrivals() const noexcept;
+
+    /// @brief Enables the depth search - i.e., turns a x, y optimization
+    ///        to an x, y, z optimization.
+    void enableSearchDepth() noexcept;
+    /// @brief Disables the depth search and searches at a fixed depth.
+    /// @sa \c setDepth()
+    void disableSearchDepth() noexcept;
+    /// @result True indicates that depth should be searched.
+    [[nodiscard]] bool searchDepth() const noexcept;
+
 
     /// @brief To build an event, this number of arrivals is required to
     ///        contribute to the image maximum.
-    void setMinimumNumberOfArrivalsToBuildEvent(int nArrivals);
+    //void setMinimumNumberOfArrivalsToBuildEvent(int nArrivals);
     /// @result After migrating at at a point, this number of arrivals is
     ///         required to contribute in order to build the event.
-    [[nodiscard]] int getMinimumNumberOfArrivalsToBuildEvent() const noexcept;
+    //[[nodiscard]] int getMinimumNumberOfArrivalsToBuildEvent() const noexcept;
 
     /// @brief Sets the number of particles.
     /// @throws std::invalid_argument if nParticles is not positive.
@@ -77,19 +90,38 @@ public:
     /// @result The extent to search in y.  By default this is the region's
     ///         extent.
     [[nodiscard]] std::pair<double, double> getExtentInY() const;
+    /// @brief Sets the search extent in Z.
+    /// @param[in] extentInZ   The lower and upper extent to search in z in
+    ///                        meters.
+    /// @throws std::invalid_argument if the search extent is not between
+    ///         -8,500 and 800,000 meters.
+    void setExtentInZ(const std::pair<double, double> &extentInZ);
+    /// @result The extent to search in z.
+    [[nodiscard]] std::pair<double, double> getExtentInZ() const;
+
 
     /// @brief Performs the particle swarm optimization.
-    void optimize();
+    void optimize() override final;
+
+
+    [[nodiscard]] double getOptimalValue() const override final;
+    [[nodiscard]] bool haveOptimum() const noexcept override final;
+    [[nodiscard]] std::tuple<double, double, double> getOptimalHypocenter() const override final;
+    [[nodiscard]] std::vector<std::pair<Arrival, double>> getContributingArrivals() const override final;
 
     /// @result True indicates we were able to migrate the arrivals and create
     ///         an event.
-    [[nodiscard]] bool haveEvent() const noexcept;
+//    [[nodiscard]] bool haveEvent() const noexcept override final;
     /// @result The event with associated arrivals.
     /// @throws std::runtime_error if \c haveEvent() is false.
-    [[nodiscard]] Event getEvent() const;
+//    [[nodiscard]] Event getEvent() const override final;
+
+    /// @name Destructors
+    /// @{
 
     /// @brief Destructor.
     ~ParticleSwarm();
+    /// @}
 
     ParticleSwarm(const ParticleSwarm &) = delete;
     ParticleSwarm& operator=(const ParticleSwarm &) = delete;

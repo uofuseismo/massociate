@@ -5,6 +5,7 @@
 #include <uLocator/station.hpp>
 #include <uLocator/travelTimeCalculatorMap.hpp>
 #include <uLocator/travelTimeCalculator.hpp>
+#include <uLocator/position/knownLocalLocation.hpp>
 #include <uLocator/position/geographicRegion.hpp>
 #include <umps/logging/standardOut.hpp>
 #include "massociate/migrator.hpp"
@@ -31,17 +32,18 @@ public:
     std::unique_ptr<ULocator::Position::IGeographicRegion>
         mGeographicRegion{nullptr};
     std::vector<Arrival> mArrivals;
-    std::vector<Arrival> mContributingArrivals;
+    std::vector<std::unique_ptr<ULocator::Position::IKnownLocalLocation>> mKnownLocations;
+    std::vector<std::pair<Arrival, double>> mContributingArrivals;
     std::vector<std::pair<ULocator::Station, std::string>> mUniqueStationPhases;
     std::vector<double> mObservations;
-    std::vector<double> mWeights;
+    std::vector<double> mStandardDeviations;
     std::vector<int> mArrivalToUniqueStationPhaseMap;
     std::vector<std::pair<double, double>> mDifferentialArrivalPairs;
-    std::vector<std::pair<double, double>> mDifferentialArrivalPairsWeights;
+    std::vector<std::pair<double, double>>
+         mDifferentialArrivalPairsStandardDeviations;
     std::vector<std::pair<int, int>> mDifferentialArrivalIndicesPairs;
     std::vector<std::pair<int, int>> mDifferentialTablePairs;
     double mMaximumEpicentralDistance{1.e30};
-    double mDepth{6000};
     IMigrator::SignalType
         mSignalType{IMigrator::SignalType::DoubleDifference};
     IMigrator::PickSignal
@@ -60,6 +62,20 @@ IMigrator::IMigrator() :
 IMigrator::IMigrator(std::shared_ptr<UMPS::Logging::ILog> &logger) :
     pImpl(std::make_unique<IMigratorImpl> (logger))
 {
+}
+
+/// Move constructor
+IMigrator::IMigrator(IMigrator &&migrator) noexcept
+{
+    *this = std::move(migrator);
+}
+
+/// Move assignment
+IMigrator& IMigrator::operator=(IMigrator &&migrator) noexcept
+{
+    if (&migrator == this){return *this;}
+    pImpl = std::move(migrator.pImpl);
+    return *this;
 }
 
 /// Geographic region
@@ -83,27 +99,6 @@ bool IMigrator::haveGeographicRegion() const noexcept
 {
     return pImpl->mGeographicRegion != nullptr;
 }
-
-/// Depth
-/*
-void IMigrator::setDepth(const double depth)
-{
-    if (depth < -8500)
-    {
-        throw std::invalid_argument("Depth must be greater than -8500 m");
-    }
-    if (depth > 800000)
-    {
-        throw std::invalid_argument("Depth must be less than 800,000 m");
-    }
-    pImpl->mDepth = depth;
-}
-
-double IMigrator::getDepth() const noexcept
-{
-    return pImpl->mDepth;
-}
-*/
 
 /// Signal type
 void IMigrator::setSignalType(const IMigrator::SignalType signalType) noexcept
@@ -180,10 +175,10 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
     pImpl->mArrivals.clear();
     pImpl->mUniqueStationPhases.clear();
     pImpl->mObservations.clear();
-    pImpl->mWeights.clear();
+    pImpl->mStandardDeviations.clear();
     pImpl->mArrivalToUniqueStationPhaseMap.clear();
     pImpl->mDifferentialArrivalPairs.clear();
-    pImpl->mDifferentialArrivalPairsWeights.clear();
+    pImpl->mDifferentialArrivalPairsStandardDeviations.clear();
     pImpl->mDifferentialArrivalIndicesPairs.clear();
     pImpl->mDifferentialTablePairs.clear();
     pImpl->mContributingArrivals.clear();
@@ -192,7 +187,7 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
     pImpl->mArrivals.reserve(arrivals.size());
     pImpl->mUniqueStationPhases.reserve(arrivals.size());
     pImpl->mObservations.reserve(arrivals.size());
-    pImpl->mWeights.reserve(arrivals.size());
+    pImpl->mStandardDeviations.reserve(arrivals.size());
     pImpl->mArrivalToUniqueStationPhaseMap.reserve(arrivals.size());
 
     std::vector<std::string> namePhases;
@@ -261,7 +256,7 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
         pImpl->mArrivalToUniqueStationPhaseMap.push_back(
             uniqueStationPhaseIndex);
         pImpl->mObservations.push_back(arrival.getTime().count()*1.e-6);
-        pImpl->mWeights.push_back(arrival.getWeight()); 
+        pImpl->mStandardDeviations.push_back(arrival.getStandardError());
         // For computational reasons keep a unique list 
         if (!duplicate)
         {
@@ -279,7 +274,8 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
     {
         auto spaceEstimate = std::max(1, (nArrivalsSet*(nArrivalsSet - 1))/2);
         pImpl->mDifferentialArrivalPairs.reserve(spaceEstimate);
-        pImpl->mDifferentialArrivalPairsWeights.reserve(spaceEstimate);
+        pImpl->mDifferentialArrivalPairsStandardDeviations.reserve(
+            spaceEstimate);
         pImpl->mDifferentialArrivalIndicesPairs.reserve(spaceEstimate);
         pImpl->mDifferentialTablePairs.reserve(spaceEstimate);
         for (int i = 0; i < nArrivalsSet; ++i)
@@ -292,7 +288,7 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
             auto phase1
                 = pImpl->mUniqueStationPhases.at(iUniqueStationPhase).second;
             auto arrivalTime1 = pImpl->mObservations.at(i);
-            auto weight1 = pImpl->mWeights.at(i);
+            auto std1 = pImpl->mStandardDeviations.at(i);
             for (int j = i + 1; j < nArrivalsSet; ++j)
             {
                 auto jUniqueStationPhase
@@ -303,7 +299,7 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
                 auto phase2
                     = pImpl->mUniqueStationPhases.at(jUniqueStationPhase).second;
                 auto arrivalTime2 = pImpl->mObservations.at(j);
-                auto weight2 = pImpl->mWeights.at(j);
+                auto std2 = pImpl->mStandardDeviations.at(j);
                 if (phase2 != "P" && phase2 != "S"){continue;}
                 if (name1 == name2)
                 {
@@ -329,13 +325,24 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
 #endif
                 pImpl->mDifferentialArrivalPairs.push_back(
                     std::pair {arrivalTime1, arrivalTime2});
-                pImpl->mDifferentialArrivalPairsWeights.push_back(
-                    std::pair {weight1, weight2});
+                double std1Use = std1;
+                double std2Use = std2;
+                if (getPickSignalToMigrate() == IMigrator::PickSignal::Boxcar)
+                {
+                    // Standard errors come from Gaussian distributions.
+                    // Instead, we want boxcar widths which are uniform 
+                    // distributions.  This is really just solving for x where
+                    // sigma = sqrt( (2x)^2 / 12) = 2x/sqrt(12) = x/sqrt(3)
+                    // so the new sigma is sqrt(3)*sigma
+                    std1Use = std::sqrt(3)*std1;
+                    std2Use = std::sqrt(3)*std2;
+                }
+                pImpl->mDifferentialArrivalPairsStandardDeviations.push_back(
+                    std::pair {std1Use, std2Use});
                 pImpl->mDifferentialArrivalIndicesPairs.push_back(
                     std::pair {i, j});
                 pImpl->mDifferentialTablePairs.push_back(
                     std::pair {iTable, jTable});
-                //std::cout << iTable << " " << jTable << std::endl;
             }
         }
         pImpl->mLogger->debug("Set " + std::to_string(nArrivalsSet)
@@ -400,6 +407,56 @@ bool IMigrator::saveArrivalContributionList() const noexcept
     return pImpl->mSaveArrivalContributionList;
 }
 
+void IMigrator::setDefaultSearchLocations(
+    const std::vector<std::unique_ptr<ULocator::Position::IKnownLocalLocation>>
+        &locations)
+{
+    pImpl->mKnownLocations.clear();
+    for (const auto &location : locations)
+    {
+        if (location)
+        {
+            pImpl->mKnownLocations.push_back(location->clone());
+        }
+    }
+}
+
+std::unique_ptr<ULocator::Position::IKnownLocalLocation>
+IMigrator::getKnownSearchLocation(size_t index) const
+{
+    return pImpl->mKnownLocations.at(index)->clone();
+}
+
+/// TODO: Introduce travel time database
+/// Evaluate at the known locations
+std::vector<double> IMigrator::evaluateAtKnownLocations() const
+{
+    auto nLocations = static_cast<int> (pImpl->mKnownLocations.size());
+    std::vector<double> values(nLocations, 0.0);
+    for (int i = 0; i < nLocations; ++i)
+    {
+        if (pImpl->mKnownLocations[i])
+        {
+            try
+            {
+                auto x = pImpl->mKnownLocations[i]->x();
+                auto y = pImpl->mKnownLocations[i]->y();
+                auto z = pImpl->mKnownLocations[i]->z();
+                values[i] = evaluate(x, y, z);
+            }
+            catch (const std::exception &e)
+            {
+                pImpl->mLogger->warn("Failed to evaluate migration for "
+                                    +       std::to_string(i)
+                                    + ".  Failed with: "
+                                    + std::string {e.what()});
+               values[i] = 0; // Contribute nothing
+            }
+        }
+    }
+    return values;
+}
+
 /// Evaluate at a given point and depth
 double IMigrator::evaluate(
     const double x, const double y, const double z) const
@@ -411,10 +468,12 @@ double IMigrator::evaluate(
     }
     auto maxDistance = getMaximumEpicentralDistance();
     auto saveContributingArrivals = saveArrivalContributionList();
+    std::vector<double> cumulativeContributions;
     std::vector<bool> arrivalContributed;
     pImpl->mHaveContributingArrivals = false;
     if (saveContributingArrivals)
     {
+        cumulativeContributions.resize(pImpl->mArrivals.size(), 0);
         arrivalContributed.resize(pImpl->mArrivals.size(), false);
     }
     auto pickSignal = getPickSignalToMigrate();
@@ -436,7 +495,7 @@ double IMigrator::evaluate(
         assert(pImpl->mDifferentialTablePairs.size() ==
                pImpl->mDifferentialArrivalPairs.size());
         assert(pImpl->mDifferentialTablePairs.size() ==
-               pImpl->mDifferentialArrivalPairsWeights.size());
+               pImpl->mDifferentialArrivalPairsStandardDeviations.size());
 #endif
         auto nPairs
             = static_cast<int> (pImpl->mDifferentialTablePairs.size());
@@ -453,9 +512,9 @@ double IMigrator::evaluate(
                 auto tObserved1 = observedArrivalPair.first;
                 auto tObserved2 = observedArrivalPair.second;
                 const auto &observedArrivalPairWeight 
-                    = pImpl->mDifferentialArrivalPairsWeights[iPair];
-                auto weight1 = observedArrivalPairWeight.first;
-                auto weight2 = observedArrivalPairWeight.second;
+                    = pImpl->mDifferentialArrivalPairsStandardDeviations[iPair];
+                auto std1 = observedArrivalPairWeight.first;
+                auto std2 = observedArrivalPairWeight.second;
                 auto tEstimated1 = uniqueTravelTimes[iTable];
                 auto tEstimated2 = uniqueTravelTimes[jTable];
                 auto dtEstimated = tEstimated2 - tEstimated1;
@@ -466,18 +525,16 @@ double IMigrator::evaluate(
                         = ::analyticBoxcarCorrelation<double>(
                               tObserved1, tObserved2,
                               tEstimated1, tEstimated2,
-                              weight1, weight2); 
+                              std1, std2); 
                 }
                 else if (pickSignal == IMigrator::PickSignal::Gaussian)
                 {
-                    auto standardDeviation1 = 1./weight1;
-                    auto standardDeviation2 = 1./weight2;
                     auto amplitudeNormalization
                         = ::analyticGaussianCorrelationAmplitudeNormalization(
-                             standardDeviation1, standardDeviation2);
+                             std1, std2);
                     auto exponentNormalization
                         = ::analyticGaussianCorrelationExponentNormalization(
-                             standardDeviation1, standardDeviation2);
+                             std1, std2);
                     stackContributionIJ
                           = ::analyticGaussianCorrelation(dtEstimated,
                                                           tObserved1,
@@ -490,14 +547,45 @@ double IMigrator::evaluate(
                     throw std::runtime_error("Unhandled pick signal");
                 }
                 // Save the contribution?
-                if (saveContributingArrivals && stackContributionIJ > 0)
+                if (saveContributingArrivals)
                 {
-                    auto arrivalIndexPair
-                         = pImpl->mDifferentialArrivalIndicesPairs[iPair];
-                    auto iArrival = arrivalIndexPair.first;
-                    auto jArrival = arrivalIndexPair.second;
-                    arrivalContributed[iArrival] = true;
-                    arrivalContributed[jArrival] = true;
+                    double maxContribution{0};
+                    if (pickSignal == IMigrator::PickSignal::Boxcar)
+                    {
+                        maxContribution
+                           = ::analyticBoxcarCorrelation<double>(0, 0, 0, 0,
+                                                                 std1, std2);
+                    }
+                    else if (pickSignal == IMigrator::PickSignal::Gaussian)
+                    {
+                        auto amplitudeNormalization
+                          = ::analyticGaussianCorrelationAmplitudeNormalization(
+                              std1, std2);
+                        auto exponentNormalization
+                          = ::analyticGaussianCorrelationExponentNormalization(
+                              std1, std2);
+                        maxContribution
+                          = ::analyticGaussianCorrelation<double>(0, 0, 0,
+                                                          amplitudeNormalization,
+                                                          exponentNormalization);
+
+                    }
+                    if (stackContributionIJ > maxContribution*1.e-12)
+                    { 
+                        auto arrivalIndexPair
+                            = pImpl->mDifferentialArrivalIndicesPairs[iPair];
+                        auto iArrival = arrivalIndexPair.first;
+                        auto jArrival = arrivalIndexPair.second;
+//std::cout << "add: " << iTable << " " << jTable << " " << iArrival << " " << jArrival << " " << stackContributionIJ << " " << maxContribution*1.e-12 << std::endl;
+                        cumulativeContributions[iArrival]
+                            = cumulativeContributions[iArrival]
+                            + stackContributionIJ;
+                        cumulativeContributions[jArrival]
+                            = cumulativeContributions[jArrival]
+                            + stackContributionIJ;
+                        arrivalContributed[iArrival] = true;
+                        arrivalContributed[jArrival] = true;
+                    }
                 }   
                 // Finally update the stack
                 stack = stack + stackContributionIJ;
@@ -534,7 +622,8 @@ double IMigrator::evaluate(
                         auto arrival = pImpl->mArrivals[iArrival];
                         arrival.setTravelTime(tEstimated1);
                         pImpl->mContributingArrivals.push_back(
-                            std::move(arrival));
+                            std::pair {std::move(arrival),
+                                       cumulativeContributions[iArrival]});
                         contributionList.insert(iArrival);
                     }
                 }
@@ -545,7 +634,8 @@ double IMigrator::evaluate(
                         auto arrival = pImpl->mArrivals[jArrival];
                         arrival.setTravelTime(tEstimated2);
                         pImpl->mContributingArrivals.push_back(
-                            std::move(arrival));
+                            std::pair {std::move(arrival),
+                                       cumulativeContributions[jArrival]});
                         contributionList.insert(jArrival);
                     }
                 }
@@ -554,16 +644,18 @@ double IMigrator::evaluate(
         // Sort by arrival time
         std::sort(pImpl->mContributingArrivals.begin(),
                   pImpl->mContributingArrivals.end(),
-                  [](const Arrival &lhs, const Arrival &rhs)
+                  [](const std::pair<Arrival, double> &lhs,
+                     const std::pair<Arrival, double> &rhs)
                   {
-                     return lhs.getTime() < rhs.getTime();
+                     return lhs.first.getTime() < rhs.first.getTime();
                   });
         pImpl->mHaveContributingArrivals = true;
     }
     return stack;
 }
 
-std::vector<Arrival> IMigrator::getContributingArrivals() const
+std::vector<std::pair<Arrival, double>> 
+    IMigrator::getContributingArrivals() const
 {
     if (!haveArrivals()){throw std::runtime_error("Arrivals not set");}
     if (!pImpl->mHaveContributingArrivals)
@@ -586,6 +678,26 @@ void IMigrator::setMaximumEpicentralDistance(double distance)
 double IMigrator::getMaximumEpicentralDistance() const noexcept
 {
     return pImpl->mMaximumEpicentralDistance;
+}
+
+/// Travel time calculator exists?
+bool IMigrator::haveTravelTimeCalculator(
+    const std::string &network,
+    const std::string &station,
+    const std::string &phase) const noexcept
+{
+    if (!haveTravelTimeCalculatorMap()){return false;}
+    try
+    {
+        ULocator::Station uStation;
+        uStation.setNetwork(network);
+        uStation.setName(station);
+        return pImpl->mTravelTimeCalculatorMap->contains(uStation, phase);
+    }
+    catch (...)
+    {
+    }
+    return false;
 }
 
 /// Destructor

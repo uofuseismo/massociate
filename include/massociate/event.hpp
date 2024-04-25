@@ -13,6 +13,13 @@ namespace MAssociate
 class Event
 {
 public:
+    /// @brief Defines the event type as an event or a trigger.
+    enum class Type : int8_t
+    {
+        Event = 0,  /*!< This is a seismic event. */
+        Trigger = 1 /*!< A trigger is an event with too few arrivals in total or too few phase-specific arrivals. */
+    };
+public:
     /// @name Constructors
     /// @{
  
@@ -137,6 +144,12 @@ public:
     [[nodiscard]] std::chrono::microseconds getOriginTime() const;
     /// @result True indicates that the origin time is set.
     [[nodiscard]] bool haveOriginTime() const noexcept;
+
+    /// @brief Sets the event type.
+    /// @param[in] type   The event type.
+    void setType(Type type) noexcept;
+    /// @result The event type.
+    [[nodiscard]] Type getType() const noexcept;
     /// @}
 
     /// @name Arrivals

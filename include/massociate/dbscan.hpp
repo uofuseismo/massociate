@@ -1,11 +1,12 @@
-#ifndef MASSOCIATE_PRIVATE_DBSCAN_HPP
-#define MASSOCIATE_PRIVATE_DBSCAN_HPP
+#ifndef MASSOCIATE_DBSCAN_HPP
+#define MASSOCIATE_DBSCAN_HPP
 #include <memory>
+#include <massociate/clusterer.hpp>
 namespace MAssociate
 {
 /// @brief Interface to the DBSCAN clustering algorithm.
 /// @copyright Ben Baker (University of Utah) distributed under the MIT license.
-class DBSCAN
+class DBSCAN : public IClusterer
 {
 public:
     /// @name Constructors
@@ -13,14 +14,6 @@ public:
  
     /// @brief Constructor.
     DBSCAN();
-
-    /// @name Destructors
-    /// @{
- 
-    /// @brief Destructor.
-    ~DBSCAN();
-    /// @brief Resets the class and releases all memory.
-    void clear() noexcept;
     /// @}
 
     /// @name Initialization
@@ -52,7 +45,7 @@ public:
     /// @throws std::invalid_argument if nObservations or nFeatures is less than
     ///         one or X is NULL.
     /// @sa \c isInitialized()
-    void setData(int nObservations, int nFeatures, const double X[]);
+    void setData(int nObservations, int nFeatures, const std::vector<double> &X) override;
     /// @brief Sets the data to cluster.
     /// @param[in] nObservations  The number of observations (rows).
     /// @param[in] nFeatures      The number of features (columns).
@@ -67,8 +60,8 @@ public:
     /// @throws std::invalid_argument if nObservations or nFeatures is less than
     ///         one, or X is NULL, or weights has an entry which is not postiive.
     /// @sa \c isInitialized()
-    void setWeightedData(int nObservations, int nFeatures, const double X[],
-                         const double weights[]);
+    void setWeightedData(int nObservations, int nFeatures, const std::vector<double> &X,
+                         const std::vector<double> &weights);
     /// @brief Determines if the data was set.
     /// @result True indicates that the data was set.
     [[nodiscard]] bool haveData() const noexcept;
@@ -81,24 +74,36 @@ public:
     /// @throws std::runtime_error if no data was set or the class was not
     ///         initialized.
     /// @sa \c haveData(), \c isInitialized()
-    void cluster();
+    void cluster() override final;
     /// @}
 
     /// @name Results
     /// @{
 
     /// @brief Gets the number of clusters.
-    [[nodiscard]] int getNumberOfClusters() const noexcept;
+    [[nodiscard]] int getNumberOfClusters() const noexcept override final;
     /// @brief Sets the data to cluster.
     /// @result The cluster label of each observation.
     /// @throws std::runtime_error if the clusters were not computed.
     /// @sa \c haveLabels()
-    [[nodiscard]] std::vector<int> getLabels() const;
+    [[nodiscard]] std::vector<int> getLabels() const override final;
     /// @brief Determines if the labels were computed. 
     /// @result True indicates that DBSCAN was called and the labels
     ///         were extracted.
-    [[nodiscard]] bool haveLabels() const noexcept;
+    [[nodiscard]] bool haveLabels() const noexcept override final;
     /// @}
+
+    /// @name Destructors
+    /// @{
+ 
+    /// @brief Resets the class and releases all memory.
+    void clear() noexcept;
+    /// @brief Destructor.
+    ~DBSCAN() override;
+    /// @}
+
+    /// @result The clustering algorithm.
+    [[nodiscard]] IClusterer::Algorithm getAlgorithm() const noexcept override final;
 
     DBSCAN(const DBSCAN &) = delete;
     DBSCAN(DBSCAN &&) noexcept = delete;

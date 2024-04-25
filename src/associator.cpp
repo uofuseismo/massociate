@@ -1,200 +1,155 @@
-#include <string>
-#include <cmath>
-#include <iomanip>
-#include <vector>
-#include <algorithm>
-#include <numeric>
 #include <iostream>
+#include <iomanip>
+#include <string>
+#include <limits>
+#include <map>
+#include <set>
+#include <umps/logging/standardOut.hpp>
+#include <uLocator/optimizers/originTime.hpp>
+//#include <uLocator/station.hpp>
 #include "massociate/associator.hpp"
-#include "massociate/associatorParameters.hpp"
-#include "massociate/migrationParameters.hpp"
+#include "massociate/optimizer.hpp"
+#include "massociate/migrator.hpp"
+#include "massociate/arrival.hpp"
+#include "massociate/clusterer.hpp"
+#include "massociate/waveformIdentifier.hpp"
 #include "massociate/event.hpp"
 #include "massociate/pick.hpp"
-#include "massociate/arrival.hpp"
-#include "massociate/waveformIdentifier.hpp"
-#include "massociate/migrate.hpp"
-#include "massociate/mesh/spherical/points3d.hpp"
-#include "massociate/mesh/cartesian/points3d.hpp"
-#include "private/weightedStatistics.hpp"
-#include "private/dbscan.hpp"
 
 using namespace MAssociate;
 
 namespace
 {
 
-struct Points3D
+/*
+auto pickComparitor = [](const Pick &lhs, const Pick &rhs)
 {
-    double x = 0;
-    double y = 0;
-    double z = 0;
+    return lhs.getIdentifier() < rhs.getIdentifier();
 };
+*/
 
-std::vector<MAssociate::Pick>
-    getPicksInWindow(const std::vector<MAssociate::Pick> &picks,
-                     const double T0, const double T1,
-                     const bool removeT0 = true)
+std::pair<int, std::vector<int>>
+    makeCausalClusters(const int nClusters,
+                       const int minimumClusterSize,
+                       const std::vector<int> &labels,
+                       const std::vector<std::pair<Arrival, double>> &contributions)
 {
-    std::vector<MAssociate::Pick> result;
-    result.reserve(256);
-    for (const auto &pick : picks)
+    auto nArrivals = static_cast<int> (contributions.size());
+    std::vector<int> newLabels(nArrivals, -1);
+    int nNewClusters{0};
+    // Nothing to do
+    if (nClusters == 0 || nArrivals == 0)
     {
-        auto t = pick.getTime();
-        if (t >= T0 && t < T1)
-        {
-            result.push_back(pick);
-        }
-    }
-    if (removeT0)
-    {
-        for (int i=0; i<static_cast<int> (result.size()); ++i)
-        {
-            result[i].setTime(result[i].getTime() - T0);
-        }
-    }
-    return result;
-}
-
-/// @brief DBSCAN clusters on origin time however there is no requirement that
-///        a station with two picks of the same phase cannot be clustered or
-///        or a P arrival precede an S arrival for a given station.
-///        This routine fixes that by doing the following:
-///         (1) Ensures each cluster has picks that are causal.
-///         (2) Prevents the same station from contributing the same phase
-///             arrival more than once to a cluster.
-///         (3) Reassigns cluster labels so that the cluster whose cumulative
-///             contribution is labeled 0, then second highest is 1, etc.
-///             so that it the `0' cluster is first. 
-///         (4) Ensures each cluster has a minimum number of picks for
-///             nucleation.
-/// @param[in] nClusters       The number of clusters found by DBSCAN.
-/// @param[in] minClusterSize  The minimum cluster size (size to nucleate).
-/// @param[in] labels          The cluster labels created by DBSCAN.  Note that
-///                            -1 indicates the pick is not assigned to a
-///                            cluster.
-/// @param[in] contributions   The contribution of each pick to the migration
-///                            image.
-/// @param[in] picks           The picks to causally cluster.
-/// @param[out] newLabels      The new labels for each pick.  Here the 0'th
-///                            group has the largest sum of contributions
-///                            to the migration image max.  The 1'st group
-///                            has the second largest contribution, etc.
-///                            As before, -1 indicates the pick is not assigned
-///                            to a group.
-/// @param[out] nNewClusters   The number of new clusters.
-void makeDBSCANClustersCausal(const int nClusters,
-                              const int  minClusterSize,
-                              const std::vector<int> &labels,
-                              const std::vector<double> &contributions,
-                              const std::vector<MAssociate::Pick> &picks,
-                              std::vector<int> *newLabels,
-                              int *nNewClusters)
-{
-    auto nPicks = static_cast<int> (picks.size());
-    *nNewClusters = 0;
-    newLabels->resize(nPicks, -1);
-    std::vector<int> tempLabels(labels.size(), -1);
-    if (nClusters == 0){return;} // Nothing to do
-    std::vector<bool> lchecked(nPicks, false);
+        return std::pair{nNewClusters, newLabels};
+    }   
+    std::vector<bool> checked(nArrivals, false);
     std::vector<std::pair<int, double>> ranks(nClusters);
+    std::vector<int> temporaryLabels(labels.size(), -1);
     // Fix each cluster:
     //   (1) Ensure the cluster is causal
     //   (2) Note the cluster's cumulative contribution sum 
-    for (int ic=0; ic<nClusters; ++ic)
+    for (int ic = 0; ic < nClusters; ++ic)
     {
-        std::fill(lchecked.begin(), lchecked.end(), false);     
-        for (int i=0; i<nPicks; ++i)
+        std::fill(checked.begin(), checked.end(), false);
+        for (int i = 0; i < nArrivals; ++i)
         {
-            // If the pick is in the cluster and the label hasnt been created
-            if (labels[i] == ic && !lchecked[i])
+            // If the pick is in the cluster and has not been checked...
+            if (labels[i] == ic && !checked[i])
             {
-                auto waveid1 = picks[i].getWaveformIdentifier();
-                auto phase1 = picks[i].getPhaseName();
-                int bestIndex = i;
-                auto maxContribution = contributions[i];
-                for (int j=i+1; j<nPicks; ++j)
+                auto waveid1 = contributions[i].first.getWaveformIdentifier();
+                auto phase1 = contributions[i].first.getPhase();
+                int bestIndex = i; 
+                auto maxContribution = contributions[i].second;
+                for (int j = i + 1; j < nArrivals; ++j) 
                 {
                     // Check this label is in the cluster
-                    if (labels[j] == ic && !lchecked[j])
+                    if (labels[j] == ic && !checked[j])
                     {
                         // If the SNLC/phase match then run the tie-breaker
-                        auto waveid2 = picks[j].getWaveformIdentifier();
-                        auto phase2 = picks[j].getPhaseName();
+                        auto waveid2
+                            = contributions[j].first.getWaveformIdentifier();
+                        auto phase2 = contributions[j].first.getPhase();
                         if (phase1 == phase2 && waveid1 == waveid2)
                         {
-                            if (contributions[j] > maxContribution)
+                            if (contributions[j].second > maxContribution)
                             {
-                                bestIndex = j;
-                                maxContribution = contributions[j];
+                                bestIndex = j; 
+                                maxContribution = contributions[j].second;
                             }
                             else
                             {
-                                lchecked[j] = true;
+                                checked[j] = true;
                             }
                         } // Check check on phase and waveid match
-                    } // Ehd check on another pick in this cluster
+                    } // End check on another pick in this cluster
                 } // Loop on `upper triangle' of pick matrix
-                tempLabels[bestIndex] = ic; // Add pick that contributed most
-                lchecked[i] = true;
+                // Save the pick that contributed most to the migration 
+                temporaryLabels[bestIndex] = ic;
+                checked[i] = true;
             }
-        } // Loop on picks 
+        } // Loop on arrivals 
         // Ensure that P arrivals come before S arrivals
-        for (int i=0; i<nPicks; ++i)
+        for (int i = 0; i < nArrivals; ++i) 
         {
-            if (tempLabels[i] == ic)
+            if (temporaryLabels[i] == ic)
             {
-                auto waveid1 = picks[i].getWaveformIdentifier();
-                auto phase1 = picks[i].getPhaseName();
-                auto time1 = picks[i].getTime();
-                for (int j=i+1; j<nPicks; ++j)
+                auto waveid1 = contributions[i].first.getWaveformIdentifier();
+                auto phase1 = contributions[i].first.getPhase();
+                auto time1 = contributions[i].first.getTime();
+                for (int j = i + 1; j < nArrivals; ++j)
                 {
-                    if (tempLabels[j] == ic)
+                    if (temporaryLabels[j] == ic)
                     {
-                        auto waveid2 = picks[j].getWaveformIdentifier();
-                        auto phase2 = picks[j].getPhaseName();
-                        auto time2 = picks[j].getTime();
+                        auto waveid2
+                            = contributions[j].first.getWaveformIdentifier();
+                        auto phase2 = contributions[j].first.getPhase();
+                        auto time2 = contributions[j].first.getTime();
                         if (waveid1 == waveid2)
                         {
-                            // Make sure P precedes S
+                            // Make sure P precedes S.  Otherwise, select the 
+                            // pick that contributed more
                             if (phase1 == "P" && phase2 == "S")
                             {
                                 if (time1 >= time2) // P arrives after S
                                 {
-std::cout << "p after s - removing tempLabels" << std::endl;
-                                    if (contributions[i] > contributions[j])
+//std::cout << "p after s - removing temporaryLabels" << std::endl;
+                                    if (contributions[i].second >
+                                        contributions[j].second)
                                     {
-                                        tempLabels[j] =-1;
+                                        temporaryLabels[j] =-1; // Disable S
                                     }
                                     else
                                     {
-                                        tempLabels[i] =-1;
+                                        temporaryLabels[i] =-1; // Disable P
                                     }
-                                } 
+                                }
                             }
                             else if (phase1 == "S" && phase2 == "P")
                             {
-std::cout << "p after s - removing tempLabels 2" << std::endl;
+//std::cout << "p after s - removing tempLabels 2" << std::endl;
                                 if (time1 <= time2) // S arrives before P
                                 {
-                                    if (contributions[i] > contributions[j])
+                                    if (contributions[i].second >
+                                        contributions[j].second)
                                     {
-                                        tempLabels[j] =-1;
+                                        temporaryLabels[j] =-1; // Disable P
                                     }
                                     else
                                     {
-                                        tempLabels[i] =-1;
+                                        temporaryLabels[i] =-1; // Disable S
                                     }
                                 }
                             }
                         } // End check on waveid match
-                    } // End check on tempLabel j in this cluster
-                } // Loop on j picks
-            } // End check on templabel i in this cluster
-        } // Loop on picks
-        // Ensure this cluster has enough picks to nucleate
-        auto nSubCluster = std::count(tempLabels.begin(), tempLabels.end(), ic);
+                    } // End check on temporary label j in this cluster
+                } // Loop on j arrivals
+            } // End check on temporary label i in this cluster
+        } // Loop on arrivals
+        // Ensure this cluster has enough arrivals to nucleate
+        auto nSubCluster = std::count(temporaryLabels.begin(),
+                                      temporaryLabels.end(), ic); 
         double contributionSum = 0;
-        if (nSubCluster < minClusterSize)
+        if (nSubCluster < minimumClusterSize)
         {
             nSubCluster = 0;
             contributionSum =-1;
@@ -202,11 +157,11 @@ std::cout << "p after s - removing tempLabels 2" << std::endl;
         else
         {
             contributionSum = 0;
-            for (int i=0; i<nPicks; ++i)
+            for (int i = 0; i < nArrivals; ++i)
             {
-                if (tempLabels[i] == ic)
+                if (temporaryLabels[i] == ic)
                 {
-                    contributionSum = contributionSum + contributions[i];
+                    contributionSum = contributionSum + contributions[i].second;
                 }
            }
         }
@@ -221,877 +176,796 @@ std::cout << "p after s - removing tempLabels 2" << std::endl;
               });
     // Reprioritize the clusters so that:
     //  (1) The cluster who contributes the most is processed first 
-    //  (2) If a causal cluster is too small to nucleate then release all piocks
-    *nNewClusters = 0;
-    for (int ic=0; ic<nClusters; ++ic)
-    {
+    //  (2) If a causal cluster is too small to nucleate then release all
+    //      arrivals
+    nNewClusters = 0; 
+    for (int ic = 0; ic < nClusters; ++ic)
+    {    
         int newLabel = ranks[ic].first;
-        if (ranks[ic].second < 0)
+        if (ranks[ic].second < 0) 
         {
-            newLabel =-1;
+            newLabel =-1; 
         }
         else
         {
-            *nNewClusters = *nNewClusters + 1;
+            nNewClusters = nNewClusters + 1; 
         }
-        for (int i=0; i<nPicks; ++i)
+        for (int i = 0;  i< nArrivals; ++i) 
         {
-            if (tempLabels[i] == ic){newLabels->at(i) = newLabel;}
-        }
-    }
-}
-
-/*
-/// @brief Attempts to steal picks from other clusters.
-///  
-template<class T>
-void stealPicks(std::vector<MAssociate::Event> *mEvents,
-                const MAssociate::Migrate<T> &migrate)
-{
-    if (mEvents->empty()){return;}
-    auto nEvents = static_cast<int> (mEvents->size());
-    for (int iev=0; iev<nEvents; ++iev)
-    {
-        for (int jev=0; jev<nEvents; ++jev)
-        {
-        }
-    }
-}
-*/
-
-/*
-int createCausalClusterFromContribution(
-    const int cluster,
-    const std::vector<int> &labels,
-    const std::vector<double> &contributions,
-    const std::vector<MAssociate::Pick> &picks,
-    const int minClusterSize,
-    std::vector<int> *newLabels,
-    double *contributionSum)
-{
-    bool lProcess = true;
-    *contributionSum = 0;
-    // Initialize
-    auto nPicks = static_cast<int> (labels.size());
-    newLabels->resize(nPicks, -1);
-    auto nSubCluster = std::count(labels.begin(), labels.end(), cluster);
-    // Not enough picks to nucleate so don't bother
-    if (nSubCluster < minClusterSize)
-    {
-        nSubCluster = 0;
-        return nSubCluster;
-    }
-    // Investigate each pick 
-    std::vector<bool> lchecked(nPicks, false);
-    for (int i=0; i<nPicks; ++i)
-    {
-        // If the pick is in this cluster and the new label has not been creaetd
-        if (labels[i] == cluster && !lchecked[i])
-        {
-            auto waveid1 = picks[i].getWaveformIdentifier();
-            auto phase1 = picks[i].getPhaseName();
-            int bestIndex = i;
-            double maxContribution = contributions[i];
-            for (int j=i+1; j<nPicks; ++j)
+            if (temporaryLabels[i] == ic)
             {
-                // Check this label is in the cluster
-                if (labels[j] == cluster && !lchecked[j])
-                {
-                    // If the SNLC/phase match then run the tie-breaker
-                    auto waveid2 = picks[j].getWaveformIdentifier();
-                    auto phase2 = picks[j].getPhaseName(); 
-                    if (phase1 == phase2 && waveid1 == waveid2)
-                    {
-                        if (contributions[j] > maxContribution) 
-                        {
-                            bestIndex = j;
-                            maxContribution = contributions[j];
-                        }
-                        else
-                        {
-                            lchecked[j] = true;
-                        }
-                    }
-                }
-            } // End other phases
-            newLabels->at(bestIndex) = 0; // Add pick that contributed most
-            lchecked[i] = true;
-        } // End check on if this pick should be scrutinized
-    } // Loop on picks
-    // If there are too few picks to nucleate then leave all picks unassociated
-    nSubCluster = std::count(newLabels->begin(), newLabels->end(), 0);
-    if (nSubCluster < minClusterSize)
-    {
-        lProcess = false;
-        nSubCluster = 0;
-        *contributionSum = 0;
-        std::fill(newLabels->begin(), newLabels->end(), -1);
-    }
-    else
-    {
-        // Otherwise get the sum of the contributions
-        double sum = 0; 
-        for (int i=0; i<nPicks; ++i)
-        {
-            if (newLabels->at(i) == 0){sum = sum + contributions[i];}
+                newLabels.at(i) = newLabel;
+            }
         }
-        *contributionSum = sum;
     }
-    return nSubCluster;
-} 
+    return std::pair {nNewClusters, newLabels};
+}
+
+/*
+void purgePicks(const std::vector<std::pair<Arrival, double>> &clusterContributions,
+                std::set<Pick, decltype(::pickComparitor)> &unassociatedPicks)
+{
+    for (const auto &arrivalsToRemove : clusterContributions)
+    {
+        auto identifier = arrivalsToRemove.first.getIdentifier();
+        for (auto &pick : unassociatedPicks)
+        {
+            if (pick.getIdentifier() == identifier)
+            {
+                unassociatedPicks.erase(pick);
+                break;
+            }
+        }
+    }
+}
 */
 
+int countPArrivals(const std::vector<std::pair<Arrival, double>> &clusterContributions)
+{
+    int nP = 0;
+    for (const auto &contribution : clusterContributions)
+    {
+        if (contribution.first.getPhase() == "P"){nP = nP + 1;}
+    }
+    return nP;
 }
-///--------------------------------------------------------------------------///
-///                               Implementation                             ///
-///--------------------------------------------------------------------------///
-template<class T>
-class Associator<T>::AssociatorImpl
+
+}
+
+class Associator::AssociatorImpl
 {
 public:
-    Points3D indexToPoints3D(const int index)
+    AssociatorImpl(std::shared_ptr<UMPS::Logging::ILog> logger = nullptr) :
+        mLogger(logger)
     {
-        Points3D result;
-        if (mGeometry == MAssociate::Geometry::SPHERICAL_POINTS_3D)
+        if (mLogger == nullptr)
         {
-            result.x = mSphericalPoints3D->getLongitude(index);
-            result.y = mSphericalPoints3D->getLatitude(index);
-            result.z = mSphericalPoints3D->getDepth(index);
+            mLogger = std::make_shared<UMPS::Logging::StandardOut> ();
         }
-        else if (mGeometry == MAssociate::Geometry::CARTESIAN_POINTS_3D)
-        {
-            result.x = mCartesianPoints3D->getXPosition(index);
-            result.y = mCartesianPoints3D->getYPosition(index);
-            result.z = mCartesianPoints3D->getZPosition(index);
-        }
-        return result;
     }
-    /// The nucleated events
-    std::vector<MAssociate::Event> mEvents;
-    /// The optimal indices in the grid for each event.
-    std::vector<int> mOptimalIndices; 
-    /// The assocation parameters
-    MAssociate::AssociatorParameters mParameters;
-    /// The class responsible for migrating differential pick times
-    Migrate<T> mMigrate;
-    /// The picks to associate
-    std::vector<MAssociate::Pick> mPicks;
-    /// Setting a lot of picks can be very time consuming because I check for
-    /// repeat pick IDs.  This speeds up that activity.
-    std::vector<uint64_t> mPickIDs;
-    //std::vector<int> mAttemptedAssociations; // TODO is this used?
-    /// The geometry
-    std::unique_ptr<MAssociate::Mesh::Spherical::Points3D<T>>
-        mSphericalPoints3D = nullptr;
-    std::unique_ptr<MAssociate::Mesh::Cartesian::Points3D<T>>
-        mCartesianPoints3D = nullptr;
-    MAssociate::Geometry mGeometry = MAssociate::Geometry::UNKNOWN;
-    /// Event ID counter
-    uint64_t mEventID = 0;
-    /// Max differential travel time in seconds that can be migrated    
-    T mMaxDifferentialTime = 0;
-    /// Flag indicating the class is initialized
-    bool mInitialized = false;
+    [[nodiscard]] double rankStation(const std::string &channel,
+                                     const std::string &locationCode,
+                                     const double uncertainty) const
+    {
+        int channelRank{100};
+        if (channel.size() == 3)
+        {
+            auto channel2 = channel;
+            channel2.pop_back();
+            if (mChannelCodePreference.contains(channel2))
+            {
+                channelRank = mChannelCodePreference.find(channel2)->second;
+            }
+        }
+        int locationCodeRank{0};
+        if (mLocationCodePreference.contains(locationCode))
+        {
+            locationCodeRank
+                = mLocationCodePreference.find(locationCode)->second;
+        }
+        return channelRank
+             + locationCodeRank
+             + std::min(10 - std::numeric_limits<double>::epsilon()*100, uncertainty);
+    }
+    std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
+    std::unique_ptr<IOptimizer> mOptimizer{nullptr};
+    std::unique_ptr<IClusterer> mClusterer{nullptr};
+    std::vector<Pick> mPicks;
+    std::vector<Pick> mUnassociatedPicks;
+    std::vector<Event> mEvents;
+    std::map<std::string, int> mChannelCodePreference
+    {
+        std::pair {"GN", 1000}, // x
+        std::pair {"DN", 1100}, // x
+        std::pair {"HH", 1200}, // x
+        std::pair {"BH", 1300}, // x
+        std::pair {"EH", 1400}, // x
+        std::pair {"HN", 1500}, // x
+        std::pair {"EN", 1600} 
+    };
+    std::map<std::string, int> mLocationCodePreference
+    {
+        std::pair {"01", 10}, // UUSS typically uses 01
+        std::pair {"02", 20}, 
+        std::pair {"00", 30},
+        std::pair {"--", 30},
+        std::pair {"",   30}
+    };
+    double mPickCollocationTolerance{0.5};
+    int mMinimumNumberOfArrivalsToNucleate{5};
+    int mMinimumNumberOfPArrivalsToNucleate{3};
 };
 
-/// C'tor
-template<class T>
-Associator<T>::Associator() :
+/// Constructor
+Associator::Associator() :
     pImpl(std::make_unique<AssociatorImpl> ())
 {
 }
 
+/// Constructor
+Associator::Associator(std::shared_ptr<UMPS::Logging::ILog> &logger) :
+    pImpl(std::make_unique<AssociatorImpl> (logger))
+{
+}
+
 /// Destructor
-template<class T>
-Associator<T>::~Associator() = default;
+Associator::~Associator() = default;
 
-/// Clears the class
-template<class T>
-void Associator<T>::clear() noexcept
+void Associator::initialize(int nArrivals, int nPArrivals)
 {
+    if (nPArrivals > nArrivals)
+    {
+        throw std::runtime_error(
+        "P arrivals to nucleate exceeds number of arrivals to nucleate");
+    }
+    if (nArrivals < 3)
+    {
+        throw std::invalid_argument("Number of arrivals must be at least 3");
+    }
+    if (nPArrivals < 0)
+    {
+        throw std::invalid_argument("Number of P arrivals must be nonnegative");
+    }
+    pImpl->mMinimumNumberOfArrivalsToNucleate = nArrivals;
+    pImpl->mMinimumNumberOfPArrivalsToNucleate = nPArrivals;
+}
+
+/// Number of arrivals required to nucleate an event
+int Associator::getMinimumNumberOfArrivalsToNucleate() const noexcept
+{
+    return pImpl->mMinimumNumberOfArrivalsToNucleate;
+}
+
+/// Number of P arrivals required to nucleate an event
+int Associator::getMinimumNumberOfPArrivalsToNucleate() const noexcept
+{
+    return pImpl->mMinimumNumberOfPArrivalsToNucleate;
+}
+
+/// Sets the optimizer
+void Associator::setOptimizer(std::unique_ptr<IOptimizer> &&optimizer) 
+{
+    if (!optimizer->haveMigrator())
+    {
+        throw std::invalid_argument("Migrator not set on optimizer");
+    }
+    pImpl->mOptimizer = std::move(optimizer);
+}
+
+std::unique_ptr<IOptimizer> Associator::releaseOptimizer()
+{
+    if (!haveOptimizer()){std::runtime_error("Optimizer not set");}
+    auto result = std::move(pImpl->mOptimizer);
+    pImpl->mOptimizer = nullptr;
+    return result;
+}
+
+bool Associator::haveOptimizer() const noexcept
+{
+    return pImpl->mOptimizer != nullptr;
+}
+
+/// Sets the clusterer
+void Associator::setClusterer(std::unique_ptr<IClusterer> &&clusterer)
+{
+    if (clusterer == nullptr)
+    {
+        throw std::invalid_argument("Clusterer is null");
+    }
+/*
+    if (!clusterer->haveMigrator())
+    {   
+        throw std::invalid_argument("Migrator not set on optimizer");
+    }   
+*/
+    pImpl->mClusterer = std::move(clusterer);
+}
+
+std::unique_ptr<IClusterer> Associator::releaseClusterer()
+{
+    if (!haveClusterer()){std::runtime_error("Clusterer not set");}
+    auto result = std::move(pImpl->mClusterer);
+    pImpl->mClusterer = nullptr;
+    return result;
+}
+
+bool Associator::haveClusterer() const noexcept
+{
+    return pImpl->mClusterer != nullptr;
+}
+
+void Associator::setPicks(const std::vector<Pick> &picks)
+{
+    auto temporaryPicks = picks;
+    setPicks(std::move(temporaryPicks));
+}
+
+void Associator::setPicks(std::vector<Pick> &&picks)
+{
+    if (!haveOptimizer()){throw std::runtime_error("Optimizer not set");}
+    auto nInitialPicks = picks.size(); 
+    pImpl->mPicks.clear();
     pImpl->mEvents.clear();
-    pImpl->mOptimalIndices.clear();
-    pImpl->mMigrate.clear();
-    pImpl->mPicks.clear();
-    pImpl->mPickIDs.clear();
-    //pImpl->mAttemptedAssociations.clear();
-    if (pImpl->mSphericalPoints3D)
+    pImpl->mUnassociatedPicks.clear();
+    if (picks.empty()){return;}
+    // First - validate the picks that can be added
+    const auto migratorHandle = pImpl->mOptimizer->getMigratorHandle();
+    std::vector<Pick> pickList;
+    pickList.reserve(picks.size());
+    for (auto &pick : picks)
     {
-        pImpl->mSphericalPoints3D->clear();
-    }
-    if (pImpl->mCartesianPoints3D)
-    {
-        pImpl->mCartesianPoints3D = nullptr;
-    }
-    pImpl->mSphericalPoints3D = nullptr;
-    pImpl->mCartesianPoints3D = nullptr;
-    pImpl->mGeometry = MAssociate::Geometry::UNKNOWN;
-    pImpl->mMaxDifferentialTime =-1;
-    pImpl->mEventID = 0;
-    pImpl->mInitialized = false;
-} 
-
-/// Initialize the class
-template<class T>
-void Associator<T>::initialize(const AssociatorParameters &parameters,
-                               const Mesh::IMesh<T> &mesh)
-{
-    clear();
-    // Check some of the parameters
-    MAssociate::AssociatorParameters parmsWork(parameters);
-    if (!parmsWork.haveNumberOfTravelTimeTables())
-    {
-        throw std::invalid_argument(
-           "Number of travel time tables must be specified");
-    }
-    auto nTables = parmsWork.getNumberOfTravelTimeTables();
-    if (nTables < 2)
-    {
-        throw std::invalid_argument(
-           "There must be at least 2 travel time tables");
-    }
-    // Check the geometry
-    int nPoints = 0;
-    pImpl->mGeometry = mesh.getGeometry();
-    if (pImpl->mGeometry == MAssociate::Geometry::SPHERICAL_POINTS_3D)
-    {
-        pImpl->mSphericalPoints3D = mesh.cloneSphericalPoints3D();
-        if (!pImpl->mSphericalPoints3D->haveLatitudes() ||
-            !pImpl->mSphericalPoints3D->haveLongitudes() ||
-            !pImpl->mSphericalPoints3D->haveDepths())
+        if (pick.haveWaveformIdentifier() && pick.haveTime())
         {
-            throw std::invalid_argument(
-               "spherical points mesh must have lats, lons, and depths");
+            auto waveformIdentifier = pick.getWaveformIdentifier();
+            auto network = waveformIdentifier.getNetwork();
+            auto station = waveformIdentifier.getStation();
+            // These two things are required
+            if (network.empty())
+            {
+                pImpl->mLogger->warn("Network code is empty; skipping"); 
+                continue;
+            }
+            if (station.empty())
+            {
+                pImpl->mLogger->warn("Station code is empty; skpping");
+                continue;
+            }
+            if (!pick.havePhaseHint())
+            {
+                auto waveformIdentifier = pick.getWaveformIdentifier();
+                auto channel = waveformIdentifier.getChannel();
+                if (channel.back() == 'Z' || channel.back() == 'P')
+                {
+                    pick.setPhaseHint(Pick::PhaseHint::P);
+                }
+                else if (channel.back() == 'N' ||
+                         channel.back() == 'E' ||
+                         channel.back() == '1' ||
+                         channel.back() == '2' ||
+                         channel.back() == 'S')
+                {
+                     pick.setPhaseHint(Pick::PhaseHint::S);
+                }
+            } 
+            // We tried - at this stage just make it a P arrival
+            if (!pick.havePhaseHint())
+            {
+                pick.setPhaseHint(Pick::PhaseHint::P);
+            }
+            // Can we find this station in our map?
+            try
+            {
+                auto phase = pick.getPhaseHint();
+                if (!migratorHandle->haveTravelTimeCalculator(
+                    network, station, phase))
+                {
+                    pImpl->mLogger->warn("No calculator for "
+                                       + network + "." + station + "." + phase
+                                       + "; skipping...");
+                    continue;
+                }
+            }
+            catch (const std::exception &e)
+            {
+                pImpl->mLogger->warn(e.what());
+                continue;
+            }
+            // Okay - add it
+            pickList.push_back(std::move(pick));
         }
-        nPoints = pImpl->mSphericalPoints3D->getNumberOfPoints();
     }
-    else if (pImpl->mGeometry == MAssociate::Geometry::CARTESIAN_POINTS_3D)
+    if (pickList.empty()){return;}
+    // Next compute the station ranks (lower is better) and identifiers
+    auto nCandidatePicks = static_cast<int> (pickList.size());
+    std::vector<double> stationRanks(pickList.size(), 1.e30);
+    for (int i = 0; i < nCandidatePicks; ++i)
     {
-        pImpl->mCartesianPoints3D = mesh.cloneCartesianPoints3D();
-        if (!pImpl->mCartesianPoints3D->haveXPositions() ||
-            !pImpl->mCartesianPoints3D->haveYPositions() ||
-            !pImpl->mCartesianPoints3D->haveZPositions())
+        auto waveformIdentifier = pickList[i].getWaveformIdentifier();
+        auto uncertainty = pickList[i].getStandardError();
+        auto channel = waveformIdentifier.getChannel();
+        auto locationCode = waveformIdentifier.getLocationCode();
+        stationRanks[i]
+            = pImpl->rankStation(channel, locationCode, uncertainty);
+    }
+    // Now truncate duplicate picks on different channels
+    std::vector<bool> keepPick(pickList.size(), false);
+    for (int i = 0; i < nCandidatePicks; ++i)
+    {
+        auto waveformIdentifier1 = pickList[i].getWaveformIdentifier();
+        auto pick1 = pickList[i].getTime().count()*1.e-6;
+        auto phase1 = pickList[i].getPhaseHint();
+        auto network1 = waveformIdentifier1.getNetwork();
+        auto station1 = waveformIdentifier1.getStation();
+        auto channel1 = waveformIdentifier1.getChannel();
+        auto locationCode1 = waveformIdentifier1.getLocationCode();
+        auto rank1 = stationRanks[i];
+        bool haveBetterMatch{false};
+        for (int j = 0; j < nCandidatePicks; ++j)
         {
-            throw std::invalid_argument(
-               "cartesian points mesh must have x, y, and z");
-        }
-        nPoints = pImpl->mCartesianPoints3D->getNumberOfPoints();
-    }
-    else
-    {
-        throw std::runtime_error("Unhandled geometry");
-    }
-    // Set the migration parameters and initialize that engine
-    if (nPoints < 1)
-    {
-        throw std::invalid_argument("No points in geometry");
-    }
-    // Create the migration parameters
-    MAssociate::MigrationParameters migrationParms;
-    migrationParms.setNumberOfPointsInTravelTimeTable(nPoints);
-    migrationParms.setNumberOfTravelTimeTables(nTables);
-    auto tileSize = nPoints;
-    tileSize = std::min(tileSize, parmsWork.getTileSize());
-    migrationParms.setTileSize(tileSize);
-    migrationParms.setAnalyticCorrelationFunction(
-        parmsWork.getAnalyticCorrelationFunction());
-    pImpl->mMigrate.initialize(migrationParms);
-    // Finish this off
-    pImpl->mParameters = parmsWork;
-    pImpl->mInitialized = true;
-}
-
-template<class T>
-bool Associator<T>::isInitialized() const noexcept
-{
-    return pImpl->mInitialized;
-}
-
-/// Travel time tables
-template<class T>
-int Associator<T>::getNumberOfPointsInTravelTimeTable() const
-{
-    return pImpl->mMigrate.getNumberOfPointsInTravelTimeTable();
-}
-
-template<class T>
-template<typename U>
-void Associator<T>::setTravelTimeTable(const std::string &network,
-                                       const std::string &station,
-                                       const std::string &phase,
-                                       int nPoints, const U times[])
-{
-    pImpl->mMaxDifferentialTime =-1;
-    if (!isInitialized()){throw std::runtime_error("Class not inititialized");}
-    pImpl->mMigrate.setTravelTimeTable(network, station, phase, nPoints, times);
-    if (haveAllTravelTimeTables())
-    {
-        pImpl->mMaxDifferentialTime
-           = getMaximumDifferentialTravelTime();
-    }
-}
-
-template<class T>
-bool Associator<T>::haveTravelTimeTable(
-    const std::string &network, const std::string &station,
-    const std::string &phase) const noexcept
-{
-    return pImpl->mMigrate.haveTravelTimeTable(network, station, phase);
-}
-
-template<class T>
-bool Associator<T>::haveAllTravelTimeTables() const noexcept
-{
-    return pImpl->mMigrate.haveAllTravelTimeTables();
-}
- 
-template<class T>
-T Associator<T>::getMaximumDifferentialTravelTime() const noexcept
-{
-    if (pImpl->mMaxDifferentialTime < 0)
-    {
-        pImpl->mMaxDifferentialTime
-            = pImpl->mMigrate.getMaximumDifferentialTravelTime();
-    }
-    return pImpl->mMaxDifferentialTime;
-}
-
-/*
-/// Picks to bind
-template<class T>
-void Associator<T>::bindPickToEvent(const Pick &pick)
-{
-    if (!isInitialized()){throw std::runtime_error("Class not initialized");}
-    if (!pick.haveTime())
-    {
-        throw std::invalid_argument("time not set");
-    }
-    if (!pick.haveIdentifier())
-    {
-        throw std::invalid_argument("pick id not set");
-    }
-    // Nothing to do
-    auto nEvents = getNumberOfEvents();
-    if (nEvents < 1){return;}
-    // If the migration engine doesn't have the table then quit early
-    auto sncl = pick.getWaveformIdentifier();
-    auto network = sncl.getNetwork();
-    auto station = sncl.getStation();
-    auto phase = pick.getPhaseName();
-    auto pickID = pick.getIdentifier();
-    if (!pImpl->mMigrate.haveTravelTimeTable(network, station, phase))
-    {
-        throw std::runtime_error("No travel time table for " + network
-                               + "." + station + "." + phase);
-    }
-    // Find best fitting event
-    MAssociate::Arrival arrival(pick);
-    auto resMin = std::numeric_limits<double>::max();
-    int eventIndex =-1;
-    for (int iev=0; iev<nEvents; ++iev)
-    {
-        // Arrival already exists - don't add
-        if (pImpl->mEvents[iev].haveArrival(pickID)){continue;}
-        const bool overWriteIfExists = false;
-        if (pImpl->mEvents[iev].canAddArrival(arrival, overWriteIfExists))
+            if (i == j){continue;}
+            auto waveformIdentifier2 = pickList[j].getWaveformIdentifier();
+            auto pick2 = pickList[j].getTime().count()*1.e-6;
+            auto phase2 = pickList[j].getPhaseHint();
+            auto network2 = waveformIdentifier2.getNetwork();
+            auto station2 = waveformIdentifier2.getStation();
+            auto channel2 = waveformIdentifier2.getChannel();
+            auto locationCode2 = waveformIdentifier2.getLocationCode();
+            // Potentially a duplicate
+            if (network1 == network2 &&
+                station1 == station2 &&
+                phase1   == phase2 &&
+                std::abs(pick2 - pick1) < pImpl->mPickCollocationTolerance)
+            {
+                // Same network/station/phase but different channel
+                if (channel1 != channel2 || locationCode1 != locationCode2)
+                {
+                    // Lower score wins
+                    if (stationRanks[j] < rank1)
+                    {
+                        haveBetterMatch = true;
+                        break;
+                    }
+                }
+            }
+        } // Loop on other picks
+        // A better match does not exist - let's associate this
+        auto pickName = network1 + "." + station1 + "."
+                      + channel1 + "." + locationCode1 + "."
+                      + phase1;
+        if (!haveBetterMatch) 
         {
-            continue;
+            pImpl->mLogger->debug("Will retain " + pickName);
+            keepPick[i] = true;
         }
-        auto ot = pImpl->mEvents[iev].getOriginTime();
-        auto idx = pImpl->mOptimalIndices[iev];
-        auto tEst = ot
-                  + pImpl->mMigrate.getTravelTime(network, station, phase,
-                                                  idx);
-         
+        else
+        {
+            pImpl->mLogger->debug("Will not retain "
+                                + pickName 
+                                + " because a better pick exists");
+        }
+    }
+    // Now let's keep the best of the matching picks
+    pImpl->mPicks.reserve(pickList.size());
+    uint64_t maxIdentifier{0};
+    for (int i = 0; i < nCandidatePicks; ++i)
+    {
+        if (keepPick[i])
+        {
+            maxIdentifier = std::max(maxIdentifier,
+                                     pickList[i].getIdentifier());
+            pImpl->mPicks.push_back(std::move(pickList[i]));
+        }
+    }
+    // Now clean up the pick identifiers.  Every time we come across
+    // a duplicate identifier the duplicate identifier is set to some
+    // gaurenteed larger value
+    for (size_t i = 0; i < pImpl->mPicks.size(); ++i)
+    {
+        for (int j = i + 1; j < pImpl->mPicks.size(); ++j)
+        {
+            if (pImpl->mPicks[i].getIdentifier() ==
+                pImpl->mPicks[j].getIdentifier())
+            {
+                maxIdentifier = maxIdentifier + 1; // Make sure this goes first
+                pImpl->mPicks[j].setIdentifier(maxIdentifier);
+            }
+        }
     } 
-}
-*/
-
-/// Picks
-template<class T>
-void Associator<T>::addPick(const Pick &newPick)
-{
-    if (!isInitialized()){throw std::runtime_error("Class not initialized");}
-    if (!pImpl->mMigrate.isInitialized())
-    {
-        throw std::runtime_error("migration engine not initialized");
-    }
-    if (!newPick.haveTime())
-    {
-        throw std::invalid_argument("time not set");
-    }
-    if (!newPick.haveIdentifier())
-    {
-        throw std::invalid_argument("pick id not set");
-    }
-    if (pImpl->mPicks.capacity() == 0)
-    {
-        pImpl->mPicks.reserve(8192);
-        pImpl->mPickIDs.reserve(8192);
-    }
-    // If the migration doesn't have the table then quit early
-    auto newSNCL = newPick.getWaveformIdentifier();
-    auto networkNew = newSNCL.getNetwork();
-    auto stationNew = newSNCL.getStation();
-    auto phaseNew = newPick.getPhaseName();
-    if (!pImpl->mMigrate.haveTravelTimeTable(networkNew,
-                                             stationNew,
-                                             phaseNew))
-    {
-        throw std::runtime_error("No travel time table for " + networkNew
-                               + "." + stationNew + "." + phaseNew);
-    }
-    // Look for this pick
-    auto pickID = newPick.getIdentifier();
-    auto it = std::find(pImpl->mPickIDs.begin(), pImpl->mPickIDs.end(), pickID);
-    if (it == pImpl->mPickIDs.end())
-    {
-        pImpl->mPicks.push_back(newPick);
-        pImpl->mPickIDs.push_back(pickID);
-    }
-    else
-    {
-        std::cerr << "Pick already exists - overwriting" << std::endl;
-        auto ia = std::distance(pImpl->mPickIDs.begin(), it);
-        pImpl->mPicks[ia] = newPick;
-    }
-/*
-    bool isNew = true;
-    int ia = 0;
-    for (const auto &pick : pImpl->mPicks)
-    {
-        if (pick.getIdentifier() == pickID)
-        {
-            std::cerr << "Pick already exists - overwriting" << std::endl;
-            pImpl->mPicks[ia] = newPick;
-            isNew = false;
-            break;
-        }
-        ia = ia + 1;
-    }
-    if (isNew)
-    {
-        pImpl->mPicks.push_back(newPick);
-        //pImpl->mPickIDs.push_back(pickID);
-    }
-*/
+    std::sort(pImpl->mPicks.begin(),
+              pImpl->mPicks.end(),
+              [](const Pick &lhs, const Pick &rhs)
+              {
+                 return lhs.getTime() < rhs.getTime();
+              });
+    pImpl->mUnassociatedPicks = pImpl->mPicks;
+    pImpl->mLogger->debug("Set " + std::to_string(pImpl->mPicks.size())
+                        + " out of " + std::to_string(nInitialPicks)
+                        + " initial picks on associator"); 
 }
 
-/// Clear the picks
-template<class T>
-void Associator<T>::clearPicks() noexcept
+void Associator::associate(const std::chrono::seconds &minimumOriginTime,
+                           const std::chrono::seconds &maximumOriginTime)
 {
-    pImpl->mPicks.clear();
-    pImpl->mPickIDs.clear();
-    
-}
-
-/// Gets the number of picks
-template<class T>
-int Associator<T>::getNumberOfPicks() const noexcept
-{
-    return static_cast<int> (pImpl->mPicks.size());
-}
-
-/// Associate
-template<class T>
-void Associator<T>::associate()
-{
-    if (!isInitialized()){throw std::runtime_error("Class not initialized");}
-    auto nPicks = getNumberOfPicks();
-    if (getNumberOfPicks() < 1)
+    if (!haveClusterer()){throw std::runtime_error("Clusterer not set");}
+    if (!haveOptimizer()){throw std::runtime_error("Optimizer not set");}
+    // Clear the events and unassociated picks
+    pImpl->mEvents.clear();
+    pImpl->mUnassociatedPicks = pImpl->mPicks;
+    //if (pImpl->mUnassociatedPicks.empty()){return;} // No picks
+    // Insufficient number of picks
+    if (static_cast<int> (pImpl->mUnassociatedPicks.size()) < 
+        getMinimumNumberOfArrivalsToNucleate())
     {
-        std::cerr << "No picks" << std::endl;
         return;
     }
-    // Sort the picks temporally
-    std::sort(pImpl->mPicks.begin(), pImpl->mPicks.end(),
-              [](const MAssociate::Pick &a, const MAssociate::Pick &b)
-              {
-                 return a.getTime() < b.getTime();
-              });
-    std::vector<bool> isAssociated(nPicks, false);
-    // Break the problem up into temporal chunks.  Effectively, when picks 
-    // are too far spaced in time they can't meaningfully interact through our
-    // modeled differential travel times.
-    auto picks = pImpl->mPicks;
-    auto maxDT = getMaximumDifferentialTravelTime();
-    auto minArrivalsToNucleate
-        = pImpl->mParameters.getMinimumNumberOfArrivalsToNucleate();
-    double rootT0 = picks[0].getTime();
-    auto lastPickTime = picks.back().getTime();
-    // Extract picks from window:
-    //    [T0 - 3*maxDT : T0 + maxDT : T0 + 2.2*maxDT]
-    auto T0 = rootT0;
-    //int nClusters0 =-1; // Number of clusters in previous iteration
-    while (true) //for (int kwin=0; kwin<nPicks; ++kwin)
+    // Create the set of unassociated picks
+    auto pickComparitor = [](const Pick &lhs, const Pick &rhs)
     {
-        //auto T1 = T0 + maxDT*2; // TODO make 2 a factor
-        // There's a bit of a tradeoff here.  If we grab too many irrelavant
-        // picks then our migration image will be corrupted and it will make
-        // the greedy algorithm's job more difficult.  However, if the window
-        // is too tight then we potentially miss relevant picks.
-        auto maxOriginTime = T0 + maxDT; // Don't want events at end of window
-        auto minPickTime = T0 - 2*maxDT;
-        auto maxPickTime = T0 + 2*maxDT + 0.5; // 0.5 is like max noise on pick
-        // Quitting time?
-        if (maxOriginTime > lastPickTime + 2*maxDT){break;}
-        // Get the picks in this chunk of time.
-        auto localPicks = getPicksInWindow(picks, minPickTime, maxPickTime, true); 
-        // Insufficient number of picks in window -> advance window
-        if (localPicks.size() < minArrivalsToNucleate)
+        return lhs.getIdentifier() < rhs.getIdentifier();
+    };
+    std::set<Pick, decltype(pickComparitor)> unassociatedPicks;
+    for (const auto &pick : pImpl->mPicks)
+    {
+        if (!unassociatedPicks.contains(pick))
         {
-            T0 = maxOriginTime;
-            continue;
+            if (pick.getTime().count()*1.e-6 >= minimumOriginTime.count())
+            {
+                unassociatedPicks.insert(pick);
+            }
         }
-        // Load the unassociated picks into the migration engine. 
-        pImpl->mMigrate.clearPicks();
-        for (const auto &localPick : localPicks)
+    }
+    auto unassociatedPicksPreviousIteration = unassociatedPicks;
+
+    ULocator::Optimizers::OriginTime originTimeCalculator;
+    originTimeCalculator.setNorm(ULocator::Optimizers::IOptimizer::Norm::L1, 1);
+    // Iterative loop with a bound.  We can only make as many clusters
+    // as there are picks.
+    auto nIterations = static_cast<int> (unassociatedPicks.size());
+    for (int k = 0; k < nIterations; ++k)
+    {
+        // Did we make any progress last time?
+        if (k > 0 &&
+            unassociatedPicksPreviousIteration.size() ==
+            unassociatedPicks.size())
         {
-            pImpl->mMigrate.addPick(localPick);
+            break;
         }
-        // Migrate
-        pImpl->mMigrate.migrate();
-        if (!pImpl->mMigrate.haveImage())
+        // Do we even have enough remaining picks to continue?
+        if (static_cast<int> (unassociatedPicks.size()) < 
+            getMinimumNumberOfArrivalsToNucleate())
         {
-            T0 = maxOriginTime;
-            continue;
+            pImpl->mLogger->debug("Insufficient number picks to associate");
+            break;
         }
-        // Attempt to cluster (origin times) given the maximum of the
-        // migration image
-        auto travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();
-        auto contributions = pImpl->mMigrate.getContributionToMaximum();
-        std::vector<double> originTimes(localPicks.size());
-        for (int ip=0; ip<localPicks.size(); ++ip)
+        auto nPArrivals
+            = std::count_if(unassociatedPicks.begin(), unassociatedPicks.end(),
+                            [](const Pick &p)
+                            {
+                                return p.getPhaseHint() == "P";
+                            });
+        if (nPArrivals < getMinimumNumberOfPArrivalsToNucleate())
         {
-            originTimes[ip] = localPicks[ip].getTime()
-                            - travelTimesToMaximum[ip];
-            //std::cout << ip << " " << originTimes[ip] << std::endl;
+            pImpl->mLogger->debug(
+               "Insufficient number of P picks to associate");
+            break;
         }
-        // Cluster origin times.  There is no causality here.  It is just an 
-        // approximation of how the picks should be distributed.
-        DBSCAN dbscan;
-        dbscan.initialize(pImpl->mParameters.getDBSCANEpsilon(),
-                          pImpl->mParameters.getDBSCANMinimumClusterSize()); 
-        dbscan.setData(originTimes.size(), 1, originTimes.data());
-        dbscan.cluster();
-        auto nClusters = dbscan.getNumberOfClusters();
-        auto labels = dbscan.getLabels();
+        // Set the arrivals
+        pImpl->mLogger->debug("Beginning iteration " + std::to_string(k)
+                            + " with " + std::to_string(unassociatedPicks.size())
+                            + " unassociated picks");
+        std::vector<Arrival> arrivals;
+        arrivals.reserve(unassociatedPicks.size());
+        for (const auto &pick : unassociatedPicks)
+        {
+            arrivals.push_back(Arrival {pick});
+        }
+        try
+        {
+            pImpl->mOptimizer->setArrivals(arrivals);
+        }
+        catch (const std::exception &e)
+        {
+            pImpl->mLogger->error("Failed to set arrivals"
+                                + std::string {e.what()});
+            break;
+        }
+        // Optimize the migration image
+        pImpl->mLogger->debug("Performing initial optimization for iteration: "
+                            + std::to_string(k));
+        try
+        {
+            pImpl->mOptimizer->optimize();
+        }
+        catch (const std::exception &e)
+        {
+            pImpl->mLogger->warn("Initial optimization failed with: "
+                               + std::string {e.what()});
+            break;
+        }
+        if (!pImpl->mOptimizer->haveOptimum())
+        {
+            pImpl->mLogger->debug("No optimum found; quitting outer loop");
+            break;
+        }
+        // For the arrivals contributing to the maximum cluster on origin time
+        auto contributions = pImpl->mOptimizer->getContributingArrivals();
+//std::cout << "contribution size: " << contributions.size() << std::endl;
+        std::vector<double> originTimes, weights;
+        originTimes.reserve(contributions.size());
+        weights.reserve(contributions.size());
+        for (const auto &contribution : contributions)
+        {
+            originTimes.push_back(contribution.first.getTime().count()*1.e-6
+                                - contribution.first.getTravelTime());
+            weights.push_back(contribution.first.getWeight());
+        }
+        // Shift
+        double tShift = *std::min_element(originTimes.begin(),
+                                          originTimes.end());
+        std::transform(originTimes.begin(), originTimes.end(),
+                       originTimes.begin(),
+                       [=](const double t)
+                       {
+                           return t - tShift;
+                       });
+        try
+        {
+            pImpl->mClusterer->setData(originTimes.size(), 1, originTimes);
+            pImpl->mClusterer->cluster();
+        }
+        catch (const std::exception &e)
+        {
+            pImpl->mLogger->debug("Clustering failed with: "
+                                + std::string {e.what()});
+            break;
+        }
+        auto nCandidateClusters = pImpl->mClusterer->getNumberOfClusters();
+        auto labels = pImpl->mClusterer->getLabels();
+//std::cout << nCandidateClusters << std::endl;
+//for (const auto &l : labels){std::cout << l << std::endl;}
+//getchar();
         // Enforce causality in the clusters.  Tie-breaking between, say,
         // two P picks on CTU is done by comparing each contribution's to the
         // migration maximum.
-        int nNewClusters;
-        std::vector<int> newLabels;
-        makeDBSCANClustersCausal(nClusters, minArrivalsToNucleate,
-                                 labels, contributions, localPicks,
-                                 &newLabels, &nNewClusters);
-/*
-for (int ic=0; ic<nNewClusters; ++ic)
-{
-for (int i=0; i<newLabels.size(); ++i)
-{
- if (newLabels[i] == ic)
- {
-     std::cout << "newlabels: " << ic << " " << picks[i].getIdentifier() << " " << picks[i].getWaveformIdentifier() << " " << picks[i].getPhaseName() << std::endl;
- } 
-}
-}
-*/
-        /// Next let's attempt to associate the largest cluster
-        auto earliestOriginTime = std::numeric_limits<double>::max();
-        for (int ic=0; ic<nNewClusters; ++ic)
+        auto [nNewClusters, newLabels]
+            = ::makeCausalClusters(nCandidateClusters,
+                                   getMinimumNumberOfArrivalsToNucleate(),
+                                   labels,
+                                   contributions);
+        if (nNewClusters == 0)
         {
-            std::vector<MAssociate::Pick> picksInCluster;
-            pImpl->mMigrate.clearPicks();
-            for (int ip=0; ip<static_cast<int> (labels.size()); ++ip)
+            pImpl->mLogger->debug("No new clusters created - breaking...");
+            break;
+        }
+//for (int i =0; i < newLabels.size(); ++i)
+//{
+// std::cout << labels[i] << " " << newLabels[i] << std::endl;
+//}
+#ifndef NDEBUG
+        assert(newLabels.size() == labels.size());
+#endif
+        // For each cluster...
+        // TODO: There's an optimization to be done.  Basically, what happens
+        //       is if the new labels do not deviate from the original labels
+        //       and there is only one cluster then we do not need to migrate
+        //       again 
+        for (int iCluster = 0; iCluster < nNewClusters; ++iCluster)
+        {
+            // Sufficient number of phase arrivals present to build the cluster?
+            if (std::count(newLabels.begin(), newLabels.end(), iCluster) <
+                getMinimumNumberOfArrivalsToNucleate())
             {
-                if (newLabels[ip] == ic)
-                {
-                    pImpl->mMigrate.addPick(localPicks[ip]); 
-                    picksInCluster.push_back(localPicks[ip]);
-                }
+                pImpl->mLogger->debug("Will not refine cluster "
+                                    + std::to_string(iCluster)
+                                    + "; too few picks");
+                continue;
             }
-            // Locate this batch of picks and solve for an origin time
-            if (pImpl->mMigrate.getNumberOfPicks() > minArrivalsToNucleate)
+            auto nArrivalsInCluster = std::count(newLabels.begin(), newLabels.end(), iCluster);
+            int nPArrivalsInCluster = ::countPArrivals(contributions);
+            if (nArrivalsInCluster >= getMinimumNumberOfArrivalsToNucleate() &&
+                nPArrivalsInCluster >= getMinimumNumberOfPArrivalsToNucleate())
             {
-                // Re-migrate
-                pImpl->mMigrate.migrate();
-                // Get the travel times and location.  Note, this has a
-                // static correction.
-                travelTimesToMaximum
-                    =  pImpl->mMigrate.getTravelTimesToMaximum();
-                // Compute origin time.  For least-squares this is the weighted
-                // average.  For L1 this is the weighted median.
-                std::vector<double> weights
-                    = pImpl->mMigrate.getContributionToMaximum(true);
-                std::vector<double> residuals(weights.size(), 0);
-                for (int ip=0; ip<static_cast<int>(picksInCluster.size()); ++ip)
+                // Extract the arrivals in this (causal) cluster 
+                std::vector<MAssociate::Arrival> arrivalsInCluster;
+                for (int i = 0; i < static_cast<int> (newLabels.size()); ++i)
                 {
-                    // I define a residual as the observed - predicted time.
-                    // Note that the static corrections have already been added
-                    // to travelTimesToMaximum. 
-                    residuals[ip] = picksInCluster[ip].getTime()
-                                  - travelTimesToMaximum[ip]; 
+                    if (newLabels[i] == iCluster)
+                    {
+                        arrivalsInCluster.push_back(contributions.at(i).first);
+                    }
                 }
-                double originTime = 0;
-                if (pImpl->mParameters.getOriginTimeObjectiveFunction() ==
-                    MAssociate::OriginTimeObjectiveFunction::L1)
+/*
+            if (nPArrivalsInCluster < getMinimumNumberOfPArrivalsToNucleate())
+            {
+                pImpl->mLogger->debug("Will not refine cluster "
+                                    + std::to_string(iCluster)
+                                    + "; too few P picks");
+                continue;
+            }
+*/
+                try
                 {
-                    originTime = weightedMedian(residuals.size(),
-                                                residuals.data(),
-                                                weights.data());
+                    pImpl->mLogger->debug("Refining cluster " 
+                                      + std::to_string(iCluster)
+                                      + " with " 
+                                      + std::to_string(arrivalsInCluster.size())
+                                      + " arrivals");
+                    pImpl->mOptimizer->setArrivals(arrivalsInCluster);
+                    pImpl->mOptimizer->optimize();
+                    if (!pImpl->mOptimizer->haveOptimum())
+                    {
+                        throw std::runtime_error("No optimum found");
+                    }
                 }
-                else
+                catch (const std::exception &e)
                 {
-                    originTime = weightedMean(residuals.size(),
-                                              residuals.data(),
-                                              weights.data());
-                }
-                originTime = originTime + minPickTime; // Add in origin time
-                // If the origin time is too close to the end of the window
-                // then leave the picks as unassociated and continue
-                earliestOriginTime = std::min(earliestOriginTime, originTime);
-
-std::cout << std::setprecision(12);
-                if (originTime > maxOriginTime)
-                {
-                    //std::cout << "skipping: " << maxOriginTime << std::endl;
+                    pImpl->mLogger->warn("Optimization for cluster "
+                                       + std::to_string(iCluster)
+                                       + " failed with: "
+                                       + std::string {e.what()});
                     continue;
                 }
-/*
-            double originTime = 0;
-            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
-            {
-                    std::cout << ip << ","
-                      << picksInCluster[ip].getWaveformIdentifier()
-                      << "," << picksInCluster[ip].getIdentifier()
-                      << "," << picksInCluster[ip].getPhaseName()
-                      << "," << picksInCluster[ip].getTime() << std::endl;
-                // The residual is the observed time - predicted time.
-                // Note that the static corrections have already been added
-                // to travelTimesToMaximum.
-                double dt = picksInCluster[ip].getTime()
-                          - travelTimesToMaximum[ip];
-std::cout << "residual " << dt << std::endl;
-                originTime = originTime + weights[ip]*dt;
-            }
-*/
-//            originTime = originTime + T0; // Add in pick shift
-                // Now create the event
-                auto locationPair = pImpl->mMigrate.getImageMaximum();
-                auto location = pImpl->indexToPoints3D(locationPair.first);
-                MAssociate::Event event;
-                event.setOriginTime(originTime);
-                event.setXPosition(location.x);
-                event.setYPosition(location.y);
-                event.setZPosition(location.z);
-#ifndef NDEBUG
-std::cout << "Origin time: " << originTime << "(x,y,z)" << location.x << "," << location.y << "," << location.z << std::endl;
-#endif
-                for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
+                // One way or the other we are purging these arrivals
+                auto clusterContributions
+                     = pImpl->mOptimizer->getContributingArrivals();
+                int nPArrivalsInEvent = countPArrivals(clusterContributions);
+                for (const auto &arrivalsToRemove : clusterContributions)
                 {
-#ifndef NDEBUG
-                    std::cout << ip
-                              << "," << picksInCluster[ip].getWaveformIdentifier()
-                              << "," << picksInCluster[ip].getIdentifier()
-                              << "," << picksInCluster[ip].getPhaseName()
-                              << "," << picksInCluster[ip].getTime() << std::endl;
-#endif
-                    Arrival arrival(picksInCluster[ip]);
-                    arrival.setTime(arrival.getTime() + minPickTime);
-                    arrival.setTravelTime(travelTimesToMaximum[ip]
-                                        - arrival.getStaticCorrection());
-                    event.addArrival(arrival);
-                }
-                pImpl->mEventID = pImpl->mEventID + 1;
-                event.setIdentifier(pImpl->mEventID);
-                pImpl->mEvents.push_back(event);
-                pImpl->mOptimalIndices.push_back(locationPair.first);
-            }
-            // Remove the picks in this cluster
-            for (const auto &pickToRemove : picksInCluster)
-            {
-                int ip = 0;
-                for (auto &p : picks)
-                {
-                    if (p.getIdentifier() == pickToRemove.getIdentifier())
+                    auto identifier = arrivalsToRemove.first.getIdentifier();
+                    for (auto &pick : unassociatedPicks)
                     {
-                        picks.erase(picks.begin() + ip);
-                        break;
+                        if (pick.getIdentifier() == identifier)
+                        {
+                            if (arrivalsToRemove.first.getPhase() == "P")
+                            {
+                                nPArrivalsInEvent = nPArrivalsInEvent + 1;
+                            }
+                            unassociatedPicks.erase(pick);
+                            break;
+                        }
                     }
-                    ip = ip + 1;
                 }
+                // Does this event have too few arrivals to call it a proper event?
+                auto eventType = Event::Type::Event;
+                if (static_cast<int> (clusterContributions.size()) < 
+                    getMinimumNumberOfArrivalsToNucleate() ||
+                    nPArrivalsInEvent < getMinimumNumberOfPArrivalsToNucleate())
+                {
+                    eventType = Event::Type::Trigger;
+                }
+                // Now try to figure out the other event information
+                std::vector<double> clusterArrivalTimes, clusterWeights;
+                std::vector<double> clusterTravelTimes;
+                clusterArrivalTimes.reserve(clusterContributions.size());
+                clusterWeights.reserve(clusterContributions.size());
+                clusterTravelTimes.reserve(clusterContributions.size());
+                for (const auto &contribution : clusterContributions)
+                {
+                    clusterArrivalTimes.push_back(
+                        contribution.first.getTime().count()*1.e-6);
+                    clusterWeights.push_back(contribution.first.getWeight());
+                    clusterTravelTimes.push_back(
+                        contribution.first.getTravelTime());
+                }
+                double clusterOriginTime{0};
+                try
+                {
+                    originTimeCalculator.setArrivalTimes(clusterArrivalTimes,
+                                                         clusterWeights);
+                    originTimeCalculator.setTravelTimes(clusterTravelTimes);
+                    originTimeCalculator.optimize();
+                    clusterOriginTime = originTimeCalculator.getTime();
+                }
+                catch (const std::exception &e)
+                {
+                    pImpl->mLogger->warn(
+                        "Origin time calculation failed for cluster "
+                      + std::to_string(iCluster));
+                    continue;
+                }
+                if (clusterOriginTime < minimumOriginTime.count() ||
+                    clusterOriginTime > maximumOriginTime.count())
+                {
+                    continue;
+                }
+                // Build the event
+                auto [bestLatitude, bestLongitude, bestDepth]
+                     = pImpl->mOptimizer->getOptimalHypocenter(); 
+                Event event;
+                try
+                {
+                    event.setLatitude(bestLatitude);
+                    event.setLongitude(bestLongitude);
+                    event.setDepth(bestDepth);
+                    event.setOriginTime(clusterOriginTime);
+                    event.setType(eventType);
+                }
+                catch (const std::exception &e)
+                {
+                    pImpl->mLogger->warn(
+                         "Failed to set hypocentral info for cluster "
+                        + std::to_string(iCluster) + ".  Failed with: "
+                        + e.what());
+                    continue;
+                }
+                // Add the arrivals
+                for (const auto &arrival : clusterContributions)
+                {
+                    try
+                    {
+                        event.addArrival(arrival.first);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        pImpl->mLogger->warn(
+                           "Could not add arrival to event.  Failed with "
+                         + std::string {e.what()});
+                   }
+                }
+                pImpl->mEvents.push_back(std::move(event));
             }
-        } // Loop
-        // Update the time window
-        if (nNewClusters == 0 || maxOriginTime <= earliestOriginTime)
-        {
-            T0 = maxOriginTime;
         }
-/*
-        // This loop will attempt to refine the above clusters in a 
-        // causal fashion.  Effectively, this loop looks to assign
-        // picks to earthquakes in the same location but with different
-        // origin times.
-        for (int kCluster=0; kCluster<nClusters; ++kCluster)
+        unassociatedPicksPreviousIteration = unassociatedPicks;
+        if (nNewClusters == 0)
         {
-            std::vector<std::pair<int, double>> ranks(nClusters);
-            std::vector<std::vector<int>> newLabels(nClusters);
-            // Enforce causality by tie-breaking with the size of the
-            // contribution.  Then greedily strip out subclusters.
-            for (int ic=0; ic<nClusters; ++ic)
-            {
-                double contributionSum = 0;
-                auto nSubCluster = createCausalClusterFromContribution(
-                                     ic, labels, contributions, localPicks,
-                                     minArrivalsToNucleate,
-                                     &newLabels[ic],
-                                     &contributionSum);
-                if (nSubCluster == 0){contributionSum =-1;}
-                ranks[ic] = std::pair(ic, contributionSum);
-            }
-            // Sort in descending order based on cumulative contributions.
-            std::sort(ranks.begin(), ranks.end(), 
-                      [](const std::pair<int, double> &a,
-                         const std::pair<int, double> &b)
-                      {
-                         return a.second > b.second;
-                      });
-            // Relocate all picks in largest cluster.
-            int icMax = ranks[0].first;
-            pImpl->mMigrate.clearPicks();
-            std::vector<MAssociate::Pick> picksInCluster;
-            picksInCluster.reserve(newLabels[icMax].size());
-            for (int ip=0; ip<static_cast<int> (newLabels[icMax].size()); ++ip)
-            {
-                if (newLabels[icMax][ip] == 0)
-                {
-                    pImpl->mMigrate.addPick(localPicks[ip]);
-                    picksInCluster.push_back(localPicks[ip]);
-                }
-            }
-            // Whether or not this results in an event we have to remove
-            // these picks.
-            for (const auto p : picksInCluster)
-            {
-                for (int ip=0; ip<static_cast<int> (localPicks.size()); ++ip)
-                {
-                    if (p.getIdentifier() == localPicks[ip].getIdentifier())
-                    {
-                        localPicks.erase(localPicks.begin() + ip);
-                        labels.erase(labels.begin() + ip);
-                        break;
-                    }
-                }
-            }
-
-            // It's possible that the largest cluster is too small to migrate.
-         pImpl->mMigrate.getNumberOfPicks(); 
-            pImpl->mMigrate.migrate();
-            // Get the travel times and location.  Note, this has a correction.
-            travelTimesToMaximum = pImpl->mMigrate.getTravelTimesToMaximum();
-            // Compute origin time.  For least-squares this is the weighted 
-            // average.  Note, the weights are normalized such that they
-            // sum to unity hence we don't divide in a subsequent step
-            auto weights = pImpl->mMigrate.getContributionToMaximum(true);
-            double originTime = 0;
-            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
-            {
-                    std::cout << ip << ","
-                      << picksInCluster[ip].getWaveformIdentifier()
-                      << "," << picksInCluster[ip].getIdentifier()
-                      << "," << picksInCluster[ip].getPhaseName()
-                      << "," << picksInCluster[ip].getTime() << std::endl;
-                // The residual is the observed time - predicted time.
-                // Note that the static corrections have already been added
-                // to travelTimesToMaximum. 
-                auto dt = picksInCluster[ip].getTime()
-                        - travelTimesToMaximum[ip];
-std::cout << "residual " << dt << std::endl;
-                originTime = originTime + weights[ip]*dt;
-            }
-            originTime = originTime + T0; // Add in pick shift
-            // Now create the event
-            auto locationPair = pImpl->mMigrate.getImageMaximum();
-            auto location = pImpl->indexToPoints3D(locationPair.first);
-            MAssociate::Event event;
-            event.setOriginTime(originTime); 
-            event.setXPosition(location.x);
-            event.setYPosition(location.y);
-            event.setZPosition(location.z);
-std::cout << std::setprecision(12);
-std::cout << "Origin time: " << originTime << "(x,y,z)" << location.x << "," << location.y << "," << location.z << std::endl;
-            for (int ip=0; ip<static_cast<int> (picksInCluster.size()); ++ip)
-            {
-                Arrival arrival(picksInCluster[ip]);
-                arrival.setTravelTime(travelTimesToMaximum[ip]
-                                    - arrival.getStaticCorrection());
-                event.addArrival(arrival);
-            }
-            pImpl->mEventID = pImpl->mEventID + 1;
-            event.setIdentifier(pImpl->mEventID);
-            pImpl->mEvents.push_back(event);
-            // And remove the associated picks
-            for (const auto pickInCluster : picksInCluster)
-            {
-                for (int ip=0; ip<static_cast<int> (picks.size()); ++ip)
-                {
-                    if (picks[ip].getIdentifier() ==
-                        pickInCluster.getIdentifier())
-                    {
-                        picks.erase(picks.begin() + ip);
-                    }
-                }
-            }
-        } // Loop on clusters
-        // If there were no clusters in the window then iterate.  Otherwise,
-        // attempt to process the window event.
-        if (nClusters == 0)
-        {
-            T0 = T1;
+            pImpl->mLogger->debug("No new clusters created - breaking...");
+            break;
         }
-*/
+    }
+    // Finally build the definitive list of unassociated picks (i.e.,
+    // picks that were not attached to events)
+    for (const auto &event : pImpl->mEvents)
+    {
+        const auto &arrivalsInEvent = event.getArrivalsReference();
+        for (const auto &arrival : arrivalsInEvent)
+        {
+            auto identifier = arrival.getIdentifier();
+            pImpl->mUnassociatedPicks.erase(
+                std::remove_if(pImpl->mUnassociatedPicks.begin(),
+                               pImpl->mUnassociatedPicks.end(),
+                               [=](const Pick &pick)
+                               {
+                                   return pick.getIdentifier() == identifier;
+                               })); 
+        }
+    }
+    for (const auto &pick : pImpl->mPicks)
+    {
+        if (pick.getTime().count()*1.e-6 < minimumOriginTime.count())
+        {
+            pImpl->mUnassociatedPicks.push_back(pick);
+        }
+    }
+    auto nAssociated = pImpl->mPicks.size() - pImpl->mUnassociatedPicks.size();
+    if (!pImpl->mEvents.empty())
+    {
+        std::sort(pImpl->mEvents.begin(), pImpl->mEvents.end(), 
+                  [](const Event &lhs, const Event &rhs)
+                  {
+                     return lhs.getOriginTime() < rhs.getOriginTime();
+                  });
+        pImpl->mLogger->info("Associated "
+                           + std::to_string(nAssociated)
+                           + " picks into "
+                           + std::to_string(pImpl->mEvents.size())
+                           + " event(s)");
     }
 }
 
-/// Gets the events
-template<class T>
-std::vector<MAssociate::Event> Associator<T>::getEvents() const
+/// The unassociated picks
+std::vector<Pick> Associator::getUnassociatedPicks() const
+{
+    return pImpl->mUnassociatedPicks;
+}
+
+/// The events
+std::vector<Event> Associator::getEvents() const
 {
     return pImpl->mEvents;
 }
 
-/// Clears out the events
-template<class T>
-void Associator<T>::clearEvents(const bool resetEventCounter) noexcept
-{
-    pImpl->mEvents.clear();
-    if (resetEventCounter){pImpl->mEventID = 0;}
-}
-
-/// Gets the number of events
-template<class T>
-int Associator<T>::getNumberOfEvents() const noexcept
+/// The number of events
+int Associator::getNumberOfEvents() const noexcept
 {
     return static_cast<int> (pImpl->mEvents.size());
 }
-
-///--------------------------------------------------------------------------///
-///                          Template Instantiation                          ///
-///--------------------------------------------------------------------------///
-template class MAssociate::Associator<double>;
-template class MAssociate::Associator<float>;
-
-template void MAssociate::Associator<double>::setTravelTimeTable(
-    const std::string &network, const std::string &station,
-    const std::string &phase, int nPoints, const double times[]);
-template void MAssociate::Associator<double>::setTravelTimeTable(
-    const std::string &network, const std::string &station,
-    const std::string &phase, int nPoints, const float times[]);
-
-template void MAssociate::Associator<float>::setTravelTimeTable(
-    const std::string &network, const std::string &station,
-    const std::string &phase, int nPoints, const double times[]);
-template void MAssociate::Associator<float>::setTravelTimeTable(
-    const std::string &network, const std::string &station,
-    const std::string &phase, int nPoints, const float times[]);

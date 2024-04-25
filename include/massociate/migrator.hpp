@@ -2,6 +2,7 @@
 #define MASSOCIATE_MIGRATOR_HPP
 #include <memory>
 #include <vector>
+#include <uLocator/position/knownLocalLocation.hpp>
 namespace UMPS::Logging
 {
  class ILog;
@@ -54,6 +55,8 @@ public:
     IMigrator();
     /// @brief Constructor with a logger.
     explicit IMigrator(std::shared_ptr<UMPS::Logging::ILog> &logger);
+    /// @brief Move constructor
+    IMigrator(IMigrator &&migrator) noexcept;
     /// @}
 
     /// @name Region
@@ -83,7 +86,18 @@ public:
     [[nodiscard]] virtual const ULocator::TravelTimeCalculatorMap *getTravelTimeCalculatorMap() const;
     /// @result Releases the travel time calculator map.
     [[nodiscard]] std::unique_ptr<ULocator::TravelTimeCalculatorMap> releaseTravelTimeCalculatorMap();
+    /// @param[in] network  The network code - e.g., UU.
+    /// @param[in] station  The station name - e.g., KNB.
+    /// @param[in] phase    The phase identifier - e.g., P.
+    /// @result True indicates the travel time calculator for this
+    ///         network/station/phase exists in the map.
+    [[nodiscard]] virtual bool haveTravelTimeCalculator(const std::string &network,
+                                                        const std::string &station,
+                                                        const std::string &phase) const noexcept;
     /// @}
+
+    void setDefaultSearchLocations(const std::vector<std::unique_ptr<ULocator::Position::IKnownLocalLocation>> &locations);
+    [[nodiscard]] std::unique_ptr<ULocator::Position::IKnownLocalLocation> getKnownSearchLocation(size_t index) const;
 
     /// @brief Sets the type of pick signal (absolute or differential)
     ///        to migrate.
@@ -132,6 +146,8 @@ public:
     /// @result True indicates the arrivals were not set.
     [[nodiscard]] bool haveArrivals() const noexcept;
 
+    /// @brief Evaluates at known locations.
+    [[nodiscard]] virtual std::vector<double> evaluateAtKnownLocations() const;
     /// @throws std::runtime_error if \c haveTravelTimeCalculatorMap() is false
     ///         or \c haveArrivals() is false is false.
     [[nodiscard]] virtual double evaluate(double x, double y, double z) const;
@@ -141,7 +157,7 @@ public:
     ///       true for all arrivals.
     /// @throws std::runtime_error if evaluate was not performed with
     ///         \c saveArrivalContributionList was false.
-    [[nodiscard]] std::vector<Arrival> getContributingArrivals() const;
+    [[nodiscard]] std::vector<std::pair<Arrival, double>> getContributingArrivals() const;
 
     /// @brief Performs the optimization over the region.
     //virtual void optimize() = 0;
@@ -152,6 +168,8 @@ public:
     /// @brief Destructor.
     virtual ~IMigrator();
     /// @}
+
+    IMigrator& operator=(IMigrator &&migrator) noexcept;
 
     IMigrator(const IMigrator &) = delete;
     IMigrator& operator=(const IMigrator &) = delete;

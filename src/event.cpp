@@ -22,6 +22,7 @@ public:
     //double mY{0};
     //double mZ{0};
     int mNumberOfPArrivals{-1};
+    Type mType{Type::Event};
     bool mHaveIdentifier{false};
     bool mHaveLatitude{false};
     bool mHaveLongitude{false};
@@ -372,4 +373,15 @@ bool Event::haveArrival(const uint64_t arrivalIdentifier) const noexcept
         if (arrival.getIdentifier() == arrivalIdentifier){return true;}
     }
     return result;
+}
+
+/// Event type
+void Event::setType(Type type) noexcept
+{
+    pImpl->mType = type;
+}
+
+Event::Type Event::getType() const noexcept
+{
+    return pImpl->mType;
 }

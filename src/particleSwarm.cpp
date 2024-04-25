@@ -32,11 +32,14 @@ struct FixedDepthDoubleDifferenceMigration
         }
         catch (const std::exception &e) 
         {
-            auto errorMessage = "Problem for source at f.s. (x,y) = ("
+            auto errorMessage = "Problem for source at fixed depth (x,y) = ("
                               + std::to_string(dv.at(0)) + "," 
                               + std::to_string(dv.at(1))
                               + ").  Failed with: "  + std::string {e.what()};
-            std::cerr << errorMessage << std::endl;
+            if (mLogger)
+            {
+                mLogger->warn(errorMessage);
+            }
         }
         return pagmo::vector_double {fitness};
     }   
@@ -80,12 +83,92 @@ struct FixedDepthDoubleDifferenceMigration
     } 
 
     MAssociate::IMigrator *mMigrator{nullptr}; 
+    std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
     std::function< double(const double, const double) >
         mMigrationFunction;
     pagmo::vector_double mLowerBounds;
     pagmo::vector_double mUpperBounds;
     int mParameters{2}; 
 };
+
+
+struct FreeDepthDoubleDifferenceMigration
+{
+    pagmo::vector_double fitness(const pagmo::vector_double &dv) const
+    {
+        double fitness = std::numeric_limits<double>::max();
+#ifndef NDEBUG
+        assert(dv.size() == static_cast<int> (mParameters));
+#endif
+        try
+        {
+            // Make this negative b/c the migration operator looks to maximize
+            // but Pagmo wants to minimize - i.e., the `best' image point is
+            // the most negative image point
+            fitness =-mMigrationFunction(dv.at(0), dv.at(1), dv.at(2));
+        }
+        catch (const std::exception &e)
+        {
+            auto errorMessage = "Problem for source at (x,y,z) = ("
+                              + std::to_string(dv.at(0)) + ","
+                              + std::to_string(dv.at(1)) + ","
+                              + std::to_string(dv.at(2))
+                              + ").  Failed with: "  + std::string {e.what()};
+            if (mLogger)
+            {   
+                mLogger->warn(errorMessage);
+            }
+        }
+        return pagmo::vector_double {fitness};
+    }
+    /// @result The number of equality constraints
+    pagmo::vector_double::size_type get_eic() const
+    {
+        return 0;
+    }
+    /// @result The number of inequality constraints.
+    pagmo::vector_double::size_type get_nic() const
+    {
+        return 0;
+    }
+    /// @result The hard bounds on the search region.
+    std::pair<pagmo::vector_double, pagmo::vector_double> get_bounds() const
+    {
+        return std::pair {mLowerBounds, mUpperBounds};
+    }
+    /// @brief Sets the search boundaries.
+    void setSearchBoundaries(
+        const std::vector<double> &lowerBoundaries,
+        const std::vector<double> &upperBoundaries)
+    {   
+        if (static_cast<int> (lowerBoundaries.size()) != mParameters)
+        {
+            throw std::invalid_argument("lowerBoundaries size != 3");
+        }
+        if (lowerBoundaries.size() != upperBoundaries.size())
+        {
+            throw std::invalid_argument("upperBoundaries size != 3");
+        }
+        for (int i = 0; i < static_cast<int> (lowerBoundaries.size()); ++i)
+        {
+            if (lowerBoundaries[i] >= upperBoundaries[i])
+            {
+                throw std::invalid_argument("l[i] >= u[i]");
+            }
+        }
+        mLowerBounds = lowerBoundaries;
+        mUpperBounds = upperBoundaries;
+    }   
+
+    MAssociate::IMigrator *mMigrator{nullptr}; 
+    std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
+    std::function< double(const double, const double, const double) >
+        mMigrationFunction;
+    pagmo::vector_double mLowerBounds;
+    pagmo::vector_double mUpperBounds;
+    int mParameters{3}; 
+};
+
 }
 
 class ParticleSwarm::ParticleSwarmImpl
@@ -103,6 +186,12 @@ public:
     {
         return mMigrator->evaluate(x, y, mDepth);
     }
+    [[nodiscard]] double migrateFreeDepth(const double x,
+                                          const double y,
+                                          const double z) const
+    {
+        return mMigrator->evaluate(x, y, z);
+    }   
     std::function<double (const double, const double)>
     mFixedDepthMigrationFunction
     {
@@ -111,25 +200,91 @@ public:
                   std::placeholders::_1,
                   std::placeholders::_2)
     };
+    std::function<double (const double, const double, const double)>
+    mFreeDepthMigrationFunction
+    {
+        std::bind(&ParticleSwarmImpl::migrateFreeDepth,
+                  this,
+                  std::placeholders::_1,
+                  std::placeholders::_2,
+                  std::placeholders::_3)
+    };  
     std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
-    std::unique_ptr<IMigrator> mMigrator{nullptr};
+    IMigrator *mMigrator{nullptr};
     Event mEvent;
     std::pair<double, double> mExtentInX;
     std::pair<double, double> mExtentInY;
+    // For my relocated/enhanced catalogs this represents 
+    // the 1% percentile and 99% percentile.  Hence, this range
+    // covers a lot of depths that we are likely to find.
+    // The reason for using the relocated catalogs is we will be
+    // using the updated velocity models and station/source corrections.
+    std::pair<double, double> mExtentInZ{-1700, 22000};
+    // For Yellowstone we would go from 0.9 km to 16 km but to 
+    // be super-conservative I'll use -1 km.
+    //std::pair<double, double> mExtentInZ{-1000, 16000};
+    std::vector<std::pair<Arrival, double>> mContributingArrivals;
     double mOptimalMigrationValue{0};
+    double mBestLatitude{0};
+    double mBestLongitude{0};
+    double mBestDepth{0};
     double mDepth{6000};
-    int mGenerations{50};
-    int mParticles{20};
+    int mGenerations{75};
+    int mParticles{30}; // Heuristic is 10-30
     int mMinimumNumberOfArrivalsToBuildEvent{4};
     bool mHaveExtentInX{false};
     bool mHaveExtentInY{false};
-    bool mHaveEvent{false};
+    bool mHaveExtentInZ{true};
+    bool mHaveOptimum{false};
+    bool mSearchDepth{false};
 };
 
 /// Constructor
 ParticleSwarm::ParticleSwarm() :
+    IOptimizer (),
     pImpl(std::make_unique<ParticleSwarmImpl> ())
 {
+}
+
+ParticleSwarm::ParticleSwarm(
+    std::shared_ptr<UMPS::Logging::ILog> &logger) :
+    IOptimizer(),
+    pImpl(std::make_unique<ParticleSwarmImpl> (logger))
+{
+}
+
+
+/*
+/// Move constructor
+ParticleSwarm::ParticleSwarm(ParticleSwarm &&pso) noexcept
+{
+    *this = std::move(pso);
+}
+
+/// Move assignment
+ParticleSwarm& ParticleSwarm::operator=(ParticleSwarm &&pso) noexcept
+{
+    if (&pso == this){return *this;}
+    pImpl = std::move(pso.pImpl);
+    return *this;
+}
+*/
+
+/// Search depth
+void ParticleSwarm::enableSearchDepth() noexcept
+{
+    pImpl->mSearchDepth = true;
+}
+
+void ParticleSwarm::disableSearchDepth() noexcept
+{
+    pImpl->mSearchDepth = false;
+}
+
+/// Search in depth?
+bool ParticleSwarm::searchDepth() const noexcept
+{
+    return pImpl->mSearchDepth;
 }
 
 /// Number of particles
@@ -162,19 +317,11 @@ int ParticleSwarm::getNumberOfGenerations() const noexcept
     return pImpl->mGenerations;
 }
 
+/*
 /// Migrator
 void ParticleSwarm::setMigrator(std::unique_ptr<IMigrator> &&migrator)
 {
-    if (!migrator->haveGeographicRegion())
-    {
-        throw std::invalid_argument("Geographic region not set on migrator");
-    }
-    if (!migrator->haveTravelTimeCalculatorMap())
-    {
-        throw std::invalid_argument(
-           "Travel time calculator map not set on migrator");
-    }
-    pImpl->mMigrator = std::move(migrator);
+    IOptimizer::setMigrator(migrator);
 }
 
 std::unique_ptr<IMigrator> ParticleSwarm::releaseMigrator()
@@ -184,11 +331,7 @@ std::unique_ptr<IMigrator> ParticleSwarm::releaseMigrator()
     pImpl->mMigrator = nullptr;
     return result;
 }
-
-bool ParticleSwarm::haveMigrator() const noexcept
-{
-    return pImpl->mMigrator != nullptr;
-}
+*/
 
 /// The depth at which to perform the migration
 void ParticleSwarm::setDepth(const double depth)
@@ -248,6 +391,36 @@ std::pair<double, double> ParticleSwarm::getExtentInY() const
     return pImpl->mExtentInY;
 }
 
+void ParticleSwarm::setExtentInZ(
+    const std::pair<double, double> &extent)
+{
+    if (extent.second <= extent.first)
+    {   
+        throw std::invalid_argument("extent.second <= extent.first in z");
+    }
+    if (extent.first < -8500)
+    {
+        throw std::invalid_argument("Minimum depth must be > -8500 m");
+    }
+    if (extent.second > 800000)
+    {
+        throw std::invalid_argument("Maximum depth must be < 800,000 m");
+    }
+    pImpl->mExtentInZ = extent;
+    pImpl->mHaveExtentInZ = true;
+}
+
+std::pair<double, double> ParticleSwarm::getExtentInZ() const
+{
+    if (!pImpl->mHaveExtentInZ)
+    {
+        throw std::runtime_error("Extent in z not set");
+    }
+    return pImpl->mExtentInZ;
+}
+
+
+/*
 /// Sets the arrivals
 void ParticleSwarm::setArrivals(const std::vector<Arrival> &arrivals)
 {
@@ -260,11 +433,12 @@ bool ParticleSwarm::haveArrivals() const noexcept
     if (!haveMigrator()){return false;}
     return pImpl->mMigrator->haveArrivals();
 }
+*/
 
 /// Performs the optimization
 void ParticleSwarm::optimize()
 {
-    pImpl->mHaveEvent = false;
+    pImpl->mHaveOptimum = false;
     if (!haveMigrator())
     {
         throw std::runtime_error("Migration engine not set");
@@ -273,12 +447,13 @@ void ParticleSwarm::optimize()
     {
         throw std::runtime_error("Arrivals not set");
     }
-    if (pImpl->mMigrator->getNumberOfArrivals() <
-        getMinimumNumberOfArrivalsToBuildEvent() )
-    {
-        throw std::runtime_error(
-           "Insufficient number of arrivals set to build event");
-    }
+    pImpl->mMigrator = IOptimizer::getMigratorHandle();
+    //if (pImpl->mMigrator->getNumberOfArrivals() <
+    //    getMinimumNumberOfArrivalsToBuildEvent() )
+    //{
+    //    throw std::runtime_error(
+    //       "Insufficient number of arrivals set to build event");
+    //}
     // Ensure extent is set
     auto region = pImpl->mMigrator->getGeographicRegion();
     if (!pImpl->mHaveExtentInX)
@@ -288,30 +463,102 @@ void ParticleSwarm::optimize()
     if (!pImpl->mHaveExtentInY)
     {   
         setExtentInY(region->getExtentInY());
-    }   
+    }
     auto [x0, x1] = getExtentInX();
     auto [y0, y1] = getExtentInY();
     auto evaluationDepth = getDepth();
+    double xOptimum{0};
+    double yOptimum{0}; 
+    double zOptimum{0};
+    double fOptimum{0};
     // Make sure the migrator will not save the contribution history
     pImpl->mMigrator->disableSaveArrivalContributionList();
-    // Instantiate the fitness class 
-    ::FixedDepthDoubleDifferenceMigration fitness;
-    fitness.mMigrationFunction = pImpl->mFixedDepthMigrationFunction;
-    // Set bounds 
-    fitness.setSearchBoundaries(std::vector<double> {x0, y0},
-                                std::vector<double> {x1, y1} );
-    // Instantiate the problem
-    pagmo::problem problem{std::move(fitness)};
-    // Instantiate the particle swarm algorithm
-    pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
-    // Instantiate the population
-    auto populationSize = static_cast<size_t> (getNumberOfParticles());
-    pagmo::population population{problem, populationSize};
-    // Evolve the population
-    pImpl->mLogger->debug("Beginning PSO for 2D");
-    auto newPopulation = algorithm.evolve(population);
-    pImpl->mLogger->debug("PSO finished!");
-/*
+    if (!searchDepth())
+    {
+        // Instantiate the fitness class 
+        ::FixedDepthDoubleDifferenceMigration fitness;
+        fitness.mMigrationFunction = pImpl->mFixedDepthMigrationFunction;
+        fitness.mLogger = pImpl->mLogger;
+        // Set bounds 
+        fitness.setSearchBoundaries(std::vector<double> {x0, y0},
+                                    std::vector<double> {x1, y1} );
+        // Instantiate the problem
+        pagmo::problem problem{std::move(fitness)};
+        // Instantiate the particle swarm algorithm
+        pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
+        // Instantiate the population
+        auto populationSize = static_cast<size_t> (getNumberOfParticles());
+        pagmo::population population{problem, populationSize};
+        // Evolve the population
+        pImpl->mLogger->debug("Beginning PSO for 2D");
+        auto newPopulation = algorithm.evolve(population);
+        pImpl->mLogger->debug("PSO finished!");
+        // Pick a winner and extract the hypocenter
+        auto optimumLocation = newPopulation.champion_x();
+        xOptimum = optimumLocation.at(0);
+        yOptimum = optimumLocation.at(1);
+        zOptimum = evaluationDepth;
+        fOptimum = newPopulation.champion_f()[0]; 
+    }
+    else
+    {
+        auto [z0, z1] = getExtentInZ();
+        // Instantiate the fitness class 
+        ::FreeDepthDoubleDifferenceMigration fitness;
+        fitness.mMigrationFunction = pImpl->mFreeDepthMigrationFunction;
+        fitness.mLogger = pImpl->mLogger;
+        // Set bounds
+        fitness.setSearchBoundaries(std::vector<double> {x0, y0, z0},
+                                    std::vector<double> {x1, y1, z1} );
+        // Instantiate the problem
+        pagmo::problem problem{std::move(fitness)};
+        // Instantiate the particle swarm algorithm
+        pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
+        // Instantiate the population
+        auto populationSize = static_cast<size_t> (getNumberOfParticles());
+        pagmo::population population{problem, populationSize};
+        // Evolve the population
+        pImpl->mLogger->debug("Beginning PSO for 3D");
+        auto newPopulation = algorithm.evolve(population);
+        pImpl->mLogger->debug("PSO finished!");
+        // Pick a winner and extract the hypocenter
+        auto optimumLocation = newPopulation.champion_x();
+        xOptimum = optimumLocation.at(0);
+        yOptimum = optimumLocation.at(1);
+        zOptimum = optimumLocation.at(2);
+        fOptimum = newPopulation.champion_f()[0];
+    }
+
+    // Search through the known locations
+    auto knownCandidateEventsScores
+        = pImpl->mMigrator->evaluateAtKnownLocations();
+    if (!knownCandidateEventsScores.empty())
+    {
+        auto bestKnownCandidateEventScore
+            = std::max_element(knownCandidateEventsScores.begin(),
+                               knownCandidateEventsScores.end());
+        auto index
+            = std::distance(knownCandidateEventsScores.begin(),
+                            bestKnownCandidateEventScore);
+        auto bestKnownCandidateEventOptimum
+            = knownCandidateEventsScores.at(index);
+        //std::cout << bestKnownCandidateEventOptimum << " " << fOptimum << std::endl;
+        // Best point is most negative.  So we want to be even more negative
+        // to be better
+        bestKnownCandidateEventOptimum =-bestKnownCandidateEventOptimum;
+        if (bestKnownCandidateEventOptimum < fOptimum)
+        {
+            pImpl->mLogger->info("Predetermined event location beat PSO");
+            auto knownLocation = pImpl->mMigrator->getKnownSearchLocation(index);
+            xOptimum = knownLocation->x();
+            yOptimum = knownLocation->y();
+            zOptimum = knownLocation->z();
+            fOptimum = bestKnownCandidateEventOptimum;
+        }
+    }
+    
+  
+    /*
     const auto &xHistory = newPopulation.get_x();
     const auto &fHistory = newPopulation.get_f();
     for (size_t i = 0; i < newPopulation.size(); ++i)
@@ -319,29 +566,42 @@ void ParticleSwarm::optimize()
         auto [latitude, longitude]
             = region->localToGeographicCoordinates(xHistory[i][0],
                                                    xHistory[i][1]);
-        ParticleSwarmImpl::Point2D point2d{static_cast<float> (longitude),
-                                           static_cast<float> (latitude),
-                                           static_cast<float> (-fHistory[i][0])};
-std::cout << point2d.longitude << " " << point2d.latitude << " " << point2d.value << std::endl;
+        //ParticleSwarmImpl::Point2D point2d{static_cast<float> (longitude),
+        //                                   static_cast<float> (latitude),
+        //                                   static_cast<float> (-fHistory[i][0])};
+        //std::cout << point2d.longitude << " " << point2d.latitude << " " << point2d.value << std::endl;
+        std::cout << latitude << " " << longitude << " " << -fHistory[i][0] << std::endl;
     }
-*/
-    // Pick a winner and extract the hypocenter and origin time
-    auto optimumLocation = newPopulation.champion_x();
-    auto xOptimum = optimumLocation.at(0);
-    auto yOptimum = optimumLocation.at(1);
+    */
+    // Pick a winner and extract the hypocenter and contributing arrivals
+    //auto optimumLocation = newPopulation.champion_x();
+    //auto xOptimum = optimumLocation.at(0);
+    //auto yOptimum = optimumLocation.at(1);
+    //auto zOptimum = evaluationDepth;
     auto [latitude, longitude]
          = region->localToGeographicCoordinates(xOptimum, yOptimum);
-    Event event;
-    event.setLatitude(latitude);
-    event.setLongitude(longitude);
-    event.setDepth(evaluationDepth);
-    // Compute the corresponding origin time
+    pImpl->mBestLatitude = latitude;
+    pImpl->mBestLongitude = longitude;
+    pImpl->mBestDepth = zOptimum;
     try
     {
         pImpl->mMigrator->enableSaveArrivalContributionList();
         pImpl->mOptimalMigrationValue
-            = pImpl->mMigrator->evaluate(xOptimum, yOptimum, evaluationDepth);
-        auto contributingArrivals = pImpl->mMigrator->getContributingArrivals();
+            = pImpl->mMigrator->evaluate(xOptimum, yOptimum, zOptimum);
+//std::cout << pImpl->mOptimalMigrationValue << std::endl;
+        pImpl->mContributingArrivals
+            = pImpl->mMigrator->getContributingArrivals();
+        pImpl->mHaveOptimum = true;
+    }   
+    catch (const std::exception &e) 
+    {   
+        pImpl->mLogger->debug("PSO could not build event: "
+                            + std::string {e.what()});
+        pImpl->mHaveOptimum = false;
+    }
+    pImpl->mMigrator = nullptr;
+
+/*
         if (!contributingArrivals.empty())
         {
             // Try to build the event
@@ -381,31 +641,62 @@ std::cout << point2d.longitude << " " << point2d.latitude << " " << point2d.valu
                 pImpl->mHaveEvent = true;
             }
         }
-    }
-    catch (const std::exception &e)
-    {
-        pImpl->mLogger->warn("PSO could not build event: "
-                           + std::string {e.what()});
-    }
+*/
 }
 
+/*
 /// Get the event
 Event ParticleSwarm::getEvent() const
 {
     if (!haveEvent()){throw std::runtime_error("Event not yet built");}
     return pImpl->mEvent;
 }
+*/
 
-/// Have event?
-bool ParticleSwarm::haveEvent() const noexcept
+/// Have optimum?
+bool ParticleSwarm::haveOptimum() const noexcept
 {
-    return pImpl->mHaveEvent;
+    return pImpl->mHaveOptimum;
+}
+
+/// Optimal value
+double ParticleSwarm::getOptimalValue() const
+{
+    if (!haveOptimum())
+    {
+        throw std::runtime_error("Optimal location not computed");
+    }
+    return pImpl->mOptimalMigrationValue;
+}
+
+/// Get the optimal hypocenter
+std::tuple<double, double, double> ParticleSwarm::getOptimalHypocenter() const
+{
+    if (!haveOptimum())
+    {
+        throw std::runtime_error("Optimal location not computed");
+    }
+    return std::tuple {pImpl->mBestLatitude,
+                       pImpl->mBestLongitude,
+                       pImpl->mBestDepth};
+}
+
+/// Optimal value
+std::vector<std::pair<Arrival, double>>
+    ParticleSwarm::getContributingArrivals() const
+{
+    if (!haveOptimum())
+    {   
+        throw std::runtime_error("Optimal location not computed");
+    }   
+    return pImpl->mContributingArrivals;
 }
 
 /// Destructor
 ParticleSwarm::~ParticleSwarm() = default; 
 
 /// Number of arrivals to build an event
+/*
 void ParticleSwarm::setMinimumNumberOfArrivalsToBuildEvent(int n)
 {
     if (n < 1)
@@ -420,4 +711,4 @@ int ParticleSwarm::getMinimumNumberOfArrivalsToBuildEvent() const noexcept
 {
     return pImpl->mMinimumNumberOfArrivalsToBuildEvent;
 }
-
+*/

@@ -11,9 +11,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
-set(FindDAAL_DIR ${CMAKE_SOURCE_DIR}/CMakeModules)
-set(FindTBB_DIR ${CMAKE_SOURCE_DIR}/CMakeModules)
-set(FindMKL_DIR ${CMAKE_SOURCE_DIR}/CMakeModules)
+set(FindDAAL_DIR ${CMAKE_SOURCE_DIR}/cmake)
+set(FindTBB_DIR ${CMAKE_SOURCE_DIR}/cmake)
+set(FindMKL_DIR ${CMAKE_SOURCE_DIR}/cmake)
 find_package(NLopt REQUIRED)
 find_package(pagmo REQUIRED)
 find_package(Catch2 3 REQUIRED)
@@ -43,11 +43,12 @@ set(PRIVATE_HEADER_DIRECTORIES
 
 set(SRC
     src/arrival.cpp
-    #src/associator.cpp
+    src/associator.cpp
     #src/associatorParameters.cpp
     src/dbscan.cpp
     #src/direct.cpp
     src/event.cpp
+    src/optimizer.cpp
     #src/migrate.cpp
     #src/migrationParameters.cpp
     #src/pageRank.cpp
@@ -60,7 +61,12 @@ set(SRC
 )
 
 if (${pagmo_FOUND})
+   add_compile_definitions(USE_PAGMO)
    set(SRC ${SRC} src/particleSwarm.cpp)
+endif()
+if (${NLopt_FOUND})
+   add_compile_definitions(USE_NLOPT)
+   set(SRC ${SRC} src/dividedRectangles.cpp)
 endif()
 
 add_library(massociate ${SRC})
@@ -95,14 +101,15 @@ add_executable(tests
                testing/pick.cpp
                testing/arrival.cpp
 #               testing/mesh.cpp
-#               testing/event.cpp
+               testing/event.cpp
                testing/migrate.cpp
                testing/dbscan.cpp
-#               testing/associator.cpp
+               testing/associator.cpp
                )
-target_link_libraries(tests PRIVATE massociate ${uLocator_LIBRARY} Catch2::Catch2 Catch2::Catch2WithMain)
+target_link_libraries(tests PRIVATE massociate ${uLocator_LIBRARY} ${UMPS_LIBRARY} Catch2::Catch2 Catch2::Catch2WithMain)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                          ${CMAKE_CURRENT_SOURCE_DIR}/src
+                                         ${UMPS_INCLUDE_DIR}
                                          ${uLocator_INCLUDE_DIR}
                                          Catch2::Catch2)
 set_target_properties(tests PROPERTIES
@@ -110,12 +117,22 @@ set_target_properties(tests PROPERTIES
                       CXX_STANDARD_REQUIRED YES
                       CXX_EXTENSIONS NO)
 add_test(NAME tests
-         COMMAND tests)
+         COMMAND tests --rng-seed=2323432)
 
 ###############################################################################
 #                                 Installation                                #
 ###############################################################################
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    cmake/MAssociateConfig.cmake.in "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+    VERSION "${version}"
+    COMPATIBILITY AnyNewerVersion
+)
+
 #if (MASSOCIATE_WRAP_PYTHON)
 #   install(TARGETS massociate pymassociate
 #           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -133,12 +150,33 @@ include(GNUInstallDirs)
 ##########################################################################################
 #                                     CPACK Packaging                                    #
 ##########################################################################################
-set(CPACK_PACKAGE_NAME "massociate")
+set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
 set(CPACK_PACKAGE_VENDOR "UUSS")
 set(CPACK_PACKAGE_CONTACT "ben.baker@utah.edu")
 set(CPACK_PACKAGE_LICENSE "MIT")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A migration-based toolkit for associating seismic picks.")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "An earthquake assocation utility used at UUSS.")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY ${CPACK_PACKAGE_NAME})
+set(CPACK_VERBATIM_VARIABLES YES)
 set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_COMPONENTS_ALL libraries headers)
+if (WIN32)
+    set(CPACK_GENERATOR ZIP WIX)
+elseif (APPLE)
+    set(CPACK_GENERATOR TGZ productbuild)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(CPACK_GENERATOR TGZ RPM)
+else()
+    set(CPACK_GENERATOR TGZ)
+endif()
+set(CPACK_SOURCE_IGNORE_FILES
+  /\\.git/
+  \\.swp
+  \\.orig
+  /CMakeLists\\.txt\\.user
+  /private/
+)
+include(CPack) # Put this last!
+
