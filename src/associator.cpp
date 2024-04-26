@@ -561,7 +561,7 @@ void Associator::setPicks(std::vector<Pick> &&picks)
     // gaurenteed larger value
     for (size_t i = 0; i < pImpl->mPicks.size(); ++i)
     {
-        for (int j = i + 1; j < pImpl->mPicks.size(); ++j)
+        for (size_t j = i + 1; j < pImpl->mPicks.size(); ++j)
         {
             if (pImpl->mPicks[i].getIdentifier() ==
                 pImpl->mPicks[j].getIdentifier())

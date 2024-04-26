@@ -26,6 +26,9 @@ if (TBB_FOUND)
    message("TBB found")
    add_compile_definitions(USE_TBB)
 endif()
+set(ONEDAL_USE_DPCPP no) 
+set(ONEDAL_INTERFACE yes)
+find_package(oneDAL REQUIRED)
 
 #include_directories(
 #    ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -100,7 +103,6 @@ add_executable(tests
                testing/waveformIdentifier.cpp
                testing/pick.cpp
                testing/arrival.cpp
-#               testing/mesh.cpp
                testing/event.cpp
                testing/migrate.cpp
                testing/dbscan.cpp
