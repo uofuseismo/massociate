@@ -27,7 +27,7 @@ if (TBB_FOUND)
    add_compile_definitions(USE_TBB)
 endif()
 set(ONEDAL_USE_DPCPP no) 
-set(ONEDAL_INTERFACE yes)
+set(ONEDAL_INTERFACE no)
 find_package(oneDAL REQUIRED)
 
 #include_directories(
