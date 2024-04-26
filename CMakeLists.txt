@@ -11,14 +11,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
-set(FindDAAL_DIR ${CMAKE_SOURCE_DIR}/cmake)
+#set(FindDAAL_DIR ${CMAKE_SOURCE_DIR}/cmake)
 set(FindTBB_DIR ${CMAKE_SOURCE_DIR}/cmake)
 set(FindMKL_DIR ${CMAKE_SOURCE_DIR}/cmake)
 find_package(NLopt REQUIRED)
 find_package(pagmo REQUIRED)
 find_package(Catch2 3 REQUIRED)
 find_package(Boost REQUIRED)
-find_package(FindDAAL REQUIRED)
+#find_package(FindDAAL REQUIRED)
 #find_package(FindMKL REQUIRED)
 find_package(FindTBB)
 find_package(Threads REQUIRED)
@@ -26,8 +26,10 @@ if (TBB_FOUND)
    message("TBB found")
    add_compile_definitions(USE_TBB)
 endif()
+set(ONEDAL_LINK dynamic)
 set(ONEDAL_USE_DPCPP no) 
-set(ONEDAL_INTERFACE no)
+set(ONEDAL_INTERFACE yes)
+set(ONEDAL_SET_TBB_MANUALLY yes)
 find_package(oneDAL REQUIRED)
 
 #include_directories(
@@ -39,10 +41,10 @@ find_package(oneDAL REQUIRED)
 #)
 configure_file(${CMAKE_SOURCE_DIR}/include/private/version.hpp.in
                ${CMAKE_SOURCE_DIR}/include/massociate/version.hpp)
-set(PUBLIC_HEADER_DIRECTORIES
-    include/massociate)
-set(PRIVATE_HEADER_DIRECTORIES
-    include/private)
+#set(PUBLIC_HEADER_DIRECTORIES
+#    include/massociate)
+#set(PRIVATE_HEADER_DIRECTORIES
+#    include/private)
 
 set(SRC
     src/arrival.cpp
@@ -74,14 +76,15 @@ endif()
 
 add_library(massociate ${SRC})
 target_link_libraries(massociate
-                      PRIVATE ${DAAL_LIBRARY} ${MKL_LIBRARY} ${TBB_LIBRARY} ${UMPS_LIBRARY}
-                              ${uLocator_LIBRARY} Threads::Threads)
-target_include_directories(massociate PUBLIC  ${CMAKE_SOURCE_DIR}/include
-                                      PRIVATE ${CMAKE_SOURCE_DIR}/include
-                                              ${NLOPT_INCLUDE_DIRS}
-                                              ${DAAL_INCLUDE_DIR}
-                                              ${UMPS_INCLUDE_DIR}
-                                              ${uLocator_INCLUDE_DIR})
+                      PRIVATE ${MKL_LIBRARY} ${TBB_LIBRARY} ${UMPS_LIBRARY}
+                              ${uLocator_LIBRARY} 
+                              oneDAL::onedal oneDAL::onedal_core oneDAL::onedal_parameters oneDAL::onedal_thread Threads::Threads)
+target_include_directories(massociate
+                           PRIVATE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+                           PRIVATE ${NLOPT_INCLUDE_DIRS}
+                                   ${oneDAL_INCLUDE_DIRS}
+                                   ${UMPS_INCLUDE_DIR}
+                                   ${uLocator_INCLUDE_DIR})
 if (${pagmo_FOUND})
    target_include_directories(massociate PRIVATE Pagmo::pagmo)
    target_link_libraries(massociate PRIVATE Pagmo::pagmo)
@@ -108,7 +111,8 @@ add_executable(tests
                testing/dbscan.cpp
                testing/associator.cpp
                )
-target_link_libraries(tests PRIVATE massociate ${uLocator_LIBRARY} ${UMPS_LIBRARY} Catch2::Catch2 Catch2::Catch2WithMain)
+target_link_libraries(tests PRIVATE massociate ${uLocator_LIBRARY} ${UMPS_LIBRARY}
+                      oneDAL::onedal oneDAL::onedal_core oneDAL::onedal_parameters oneDAL::onedal_thread Catch2::Catch2 Catch2::Catch2WithMain)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                          ${CMAKE_CURRENT_SOURCE_DIR}/src
                                          ${UMPS_INCLUDE_DIR}
@@ -137,17 +141,32 @@ write_basic_package_version_file(
 
 #if (MASSOCIATE_WRAP_PYTHON)
 #   install(TARGETS massociate pymassociate
+#           EXPORT ${PROJECT_NAME}-targets
 #           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 #           LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 #           ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#           PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+#           PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+#           COMPONENT Runtime)
 #else()
    install(TARGETS massociate
+           EXPORT ${PROJECT_NAME}-targets
            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-           PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+           PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+           COMPONENT Runtime)
 #endif()
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/massociate
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+export(EXPORT ${PROJECT_NAME}-targets
+       FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Targets.cmake")
+install(EXPORT ${PROJECT_NAME}-targets
+        FILE ${PROJECT_NAME}Targets.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
+install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
 ##########################################################################################
 #                                     CPACK Packaging                                    #
