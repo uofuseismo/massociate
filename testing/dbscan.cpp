@@ -1,12 +1,11 @@
-#include <cstdio>
-#include <cstdlib>
+#include <iostream>
 #include <vector>
-#include <mkl_lapacke.h>
-#include "private/dbscan.hpp"
-#include "private/pageRank.hpp"
-#include <gtest/gtest.h>
-namespace
-{
+//#include <mkl_lapacke.h>
+#include "massociate/dbscan.hpp"
+//#include "private/pageRank.hpp"
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
+
 /*
 int getLargestEigenvalueAndEigenvector(
       const int nRows, double A[], const int lda,
@@ -53,7 +52,7 @@ int getLargestEigenvalueAndEigenvector(
 }
 */
 
-TEST(dbscan, dbscan)
+TEST_CASE("MAssociate::DBSCAN", "[dbscan]")
 {
     int nObs = 6;
     int nFeatures = 2;
@@ -81,31 +80,34 @@ TEST(dbscan, dbscan)
     MAssociate::DBSCAN dbscan;
     double epsilon = 3;
     int minSamples = 2;
-    EXPECT_NO_THROW(dbscan.initialize(epsilon, minSamples));
-    EXPECT_NO_THROW(dbscan.setData(nObs, nFeatures, X.data()));
-    EXPECT_NO_THROW(dbscan.cluster());
+    dbscan.initialize(epsilon, minSamples);
+    dbscan.setData(nObs, nFeatures, X);
+    dbscan.cluster();
     auto nClusters = dbscan.getNumberOfClusters();
-    EXPECT_EQ(nClusters, 2);
+    REQUIRE(nClusters == 2);
     //printf("nClusters: %d\n", nClusters);
     auto labels = dbscan.getLabels();
-    EXPECT_EQ(labels.size(), labelsRef.size());
-    for (int i=0; i<static_cast<int> (labels.size()); ++i)
+    REQUIRE(labels.size() == labelsRef.size());
+    for (int i = 0; i < static_cast<int> (labels.size()); ++i)
     {
-        EXPECT_EQ(labels[i], labelsRef[i]);
+        REQUIRE(labels[i] == labelsRef[i]);
     }
     // Remove the outlier
-    EXPECT_NO_THROW(dbscan.setData(nObs-1, nFeatures, X.data()));
-    EXPECT_NO_THROW(dbscan.cluster());
+    X.pop_back();
+    X.pop_back();
+    dbscan.setData(nObs - 1, nFeatures, X);
+    dbscan.cluster();
     nClusters = dbscan.getNumberOfClusters();
     //printf("nClusters: %d\n", nClusters);
-    EXPECT_EQ(nClusters, 2);
+    REQUIRE(nClusters == 2);
     labels = dbscan.getLabels();
-    EXPECT_EQ(labels.size(), labelsRef.size()-1);
-    for (int i=0; i<static_cast<int> (labels.size()); ++i)
+    REQUIRE(labels.size() == labelsRef.size() - 1);
+    for (int i  =0; i < static_cast<int> (labels.size()); ++i)
     {
-        EXPECT_EQ(labels[i], labelsRef[i]);
+        REQUIRE(labels[i] == labelsRef[i]);
     }
 }
+/*
 TEST(pageRank, largestEigenvalue)
 {
     const int nRows = 5;
@@ -128,5 +130,4 @@ TEST(pageRank, largestEigenvalue)
         EXPECT_NEAR(evectors[i], eigenvectorRef[i], 1.e-5);
     } 
 }
-
-}
+*/

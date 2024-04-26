@@ -1,3 +1,5 @@
+#include <cmath>
+#include <chrono>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -11,23 +13,24 @@ class Event::EventImpl
 {
 public:
     std::vector<Arrival> mArrivals;
-    uint64_t mIdentifier = 0;
-    double mLatitude = 0;
-    double mLongitude = 0;
-    double mDepth = 0;
-    double mOriginTime = 0;
-    double mX = 0;
-    double mY = 0;
-    double mZ = 0;
-    int mNumberOfPArrivals =-1;
-    bool mHaveIdentifier = false;
-    bool mHaveLatitude = false;
-    bool mHaveLongitude = false;
-    bool mHaveDepth = false;
-    bool mHaveOriginTime = false;
-    bool mHaveX = false;
-    bool mHaveY = false;
-    bool mHaveZ = false;
+    std::chrono::microseconds mOriginTime{0};
+    uint64_t mIdentifier{0};
+    double mLatitude{0};
+    double mLongitude{0};
+    double mDepth{0};
+    //double mX{0};
+    //double mY{0};
+    //double mZ{0};
+    int mNumberOfPArrivals{-1};
+    Type mType{Type::Event};
+    bool mHaveIdentifier{false};
+    bool mHaveLatitude{false};
+    bool mHaveLongitude{false};
+    bool mHaveDepth{false};
+    bool mHaveOriginTime{false};
+    //bool mHaveX{false};
+    //bool mHaveY{false};
+    //bool mHaveZ{false};
 };
 
 /// C'tor
@@ -70,20 +73,10 @@ Event::~Event() = default;
 /// Reset the class
 void Event::clear() noexcept
 {
-    pImpl->mArrivals.clear();
-    pImpl->mIdentifier = 0;
-    pImpl->mLatitude = 0;
-    pImpl->mLongitude = 0;
-    pImpl->mDepth = 0;
-    pImpl->mOriginTime = 0;
-    pImpl->mNumberOfPArrivals =-1;
-    pImpl->mHaveIdentifier = false;
-    pImpl->mHaveLatitude = false;
-    pImpl->mHaveLongitude = false;
-    pImpl->mHaveDepth = false;
-    pImpl->mHaveOriginTime = false;
+    pImpl = std::make_unique<EventImpl> ();
 }
 
+/*
 /// x position
 void Event::setXPosition(const double x) noexcept
 {
@@ -137,6 +130,7 @@ bool Event::haveZPosition() const noexcept
 {
     return pImpl->mHaveZ;
 }
+*/
 
 /// Latitude
 void Event::setLatitude(const double latitude)
@@ -208,11 +202,17 @@ bool Event::haveDepth() const noexcept
 /// Origin time
 void Event::setOriginTime(const double originTime) noexcept
 {
+    auto iOriginTime = static_cast<int64_t> (std::round(originTime*1.e6));
+    setOriginTime(std::chrono::microseconds {iOriginTime});
+}
+
+void Event::setOriginTime(const std::chrono::microseconds &originTime) noexcept
+{
     pImpl->mOriginTime = originTime;
     pImpl->mHaveOriginTime = true;
 }
 
-double Event::getOriginTime() const
+std::chrono::microseconds Event::getOriginTime() const
 {
     if (!haveOriginTime()){throw std::runtime_error("origin time not set");}
     return pImpl->mOriginTime;
@@ -253,7 +253,7 @@ void Event::addArrival(const Arrival &arrival)
     {
         throw std::invalid_argument("Waveform identifier not set");
     }
-    if (!arrival.havePhaseName())
+    if (!arrival.havePhase())
     {
         throw std::invalid_argument("Arrival phase name not set");
     }
@@ -287,7 +287,7 @@ int Event::canAddArrival(const Arrival &arrival,
 {
     if (!arrival.haveTime()){return -1;}
     if (!arrival.haveWaveformIdentifier()){return -1;}
-    if (!arrival.havePhaseName()){return -1;}
+    if (!arrival.havePhase()){return -1;}
     if (!arrival.haveIdentifier()){return -1;}
     // Arrival can't come in before origin time
     auto newTime = arrival.getTime();
@@ -299,11 +299,11 @@ int Event::canAddArrival(const Arrival &arrival,
     auto nArrivals = getNumberOfArrivals();
     if (nArrivals == 0){return nArrivals;}
     auto newWaveID = arrival.getWaveformIdentifier();
-    auto newPhase = arrival.getPhaseName();
+    auto newPhase = arrival.getPhase();
     for (int i=0; i<nArrivals; ++i)
     {
         auto waveid = pImpl->mArrivals[i].getWaveformIdentifier();
-        auto phase = pImpl->mArrivals[i].getPhaseName();
+        auto phase = pImpl->mArrivals[i].getPhase();
         auto time = pImpl->mArrivals[i].getTime();
         if (waveid == newWaveID)
         {
@@ -323,6 +323,11 @@ int Event::canAddArrival(const Arrival &arrival,
         }
     }
     return nArrivals;
+}
+
+const std::vector<Arrival> &Event::getArrivalsReference() const
+{
+    return *&pImpl->mArrivals;
 }
 
 std::vector<Arrival> Event::getArrivals() const
@@ -350,7 +355,7 @@ int Event::getNumberOfPArrivals() const noexcept
         pImpl->mNumberOfPArrivals = 0;
         for (const auto &arrival : pImpl->mArrivals)
         {
-            auto phase = arrival.getPhaseName();
+            auto phase = arrival.getPhase();
             if (phase == "P")
             {
                 pImpl->mNumberOfPArrivals = pImpl->mNumberOfPArrivals + 1;
@@ -368,4 +373,15 @@ bool Event::haveArrival(const uint64_t arrivalIdentifier) const noexcept
         if (arrival.getIdentifier() == arrivalIdentifier){return true;}
     }
     return result;
+}
+
+/// Event type
+void Event::setType(Type type) noexcept
+{
+    pImpl->mType = type;
+}
+
+Event::Type Event::getType() const noexcept
+{
+    return pImpl->mType;
 }

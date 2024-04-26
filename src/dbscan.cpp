@@ -23,7 +23,10 @@
   #pragma clang diagnostic ignored "-Wdeprecated-declarations"
   #pragma clang diagnostic ignored "-Woverloaded-virtual"
 #endif
-#include <daal.h>
+#include <oneapi/dal/algo/dbscan.hpp>
+#include <oneapi/dal/table/homogen.hpp>
+#include <oneapi/dal/table/row_accessor.hpp>
+//#include <daal.h>
 #ifdef __ICC
   #pragma warning(pop)
 #endif
@@ -33,39 +36,42 @@
 #ifdef __clang__
   #pragma clang diagnostic pop
 #endif
-#include "private/dbscan.hpp"
+#include "massociate/dbscan.hpp"
 
 using namespace MAssociate;
-using namespace daal;
-namespace dDBSCAN = daal::algorithms::dbscan;
-namespace dDM = daal::data_management::interface1;
+//using namespace daal;
+//namespace dDBSCAN = daal::algorithms::dbscan;
+//namespace dDM = daal::data_management::interface1;
 
 class DBSCAN::DBSCANImpl
 {
 public:
-    DBSCANImpl()
-    {
-    }
     // This is a table of features.
-    daal::services::SharedPtr<dDM::HomogenNumericTable<double> > mX;
+    //daal::services::SharedPtr<dDM::HomogenNumericTable<double> > mX;
+    std::vector<double> mXFeatures;
     // This is a table of weights
-    daal::services::SharedPtr<dDM::HomogenNumericTable<double> > mW;
+    //daal::services::SharedPtr<dDM::HomogenNumericTable<double> > mW;
+    std::vector<double> mWeights;
     // Labels
     std::vector<int> mLabels; 
     // Size of range query in seconds
-    double mEpsilon = 3;
-    // Minimum number of points for each cluster
-    int mMinObservations = 5;
-    // The number of clusters found
-    int mNumberOfClusters = 0;
+    double mEpsilon{3};
+    /// Minimum number of points for each cluster
+    int mMinObservations{5};
+    /// The number of clusters found
+    int mNumberOfClusters{0};
+    /// The number of features
+    int mNumberOfFeatures{0};
+    /// The number of observations
+    int mNumberOfObservations{0};
     /// Determines if the weights were set 
-    bool mHaveWeights = false;
-    // Flag indicating that the data was set
-    bool mHaveData = false;
-    // Flag if the clusters are computed
-    bool mHaveClusters = false;
-    // Flag indiating that this is intiialized.
-    bool mInitialized = false;
+    bool mHaveWeights{false};
+    /// Flag indicating that the data was set
+    bool mHaveData{false};
+    /// Flag if the clusters are computed
+    bool mHaveClusters{false};
+    /// Flag indicating that this is intiialized.
+    bool mInitialized{false};
 };
 
 /// C'tor
@@ -80,15 +86,7 @@ DBSCAN::~DBSCAN() = default;
 /// Resets the class
 void DBSCAN::clear() noexcept
 {
-    if (pImpl->mX){pImpl->mX->resize(1);}
-    if (pImpl->mW){pImpl->mW->resize(1);}
-    pImpl->mEpsilon = 3;
-    pImpl->mMinObservations = 5;
-    pImpl->mNumberOfClusters = 0;
-    pImpl->mHaveWeights = false;
-    pImpl->mHaveData = false;
-    pImpl->mHaveClusters = false;
-    pImpl->mInitialized = false;
+    pImpl = std::make_unique<DBSCANImpl> ();
 }
 
 /// Initialize
@@ -113,33 +111,7 @@ void DBSCAN::initialize(const double epsilon, const int minObservations)
 
 /// Sets the data
 void DBSCAN::setData(const int nObservations, const int nFeatures,
-                     const double *X)
-{
-    pImpl->mHaveData = false;
-    pImpl->mHaveClusters = false;
-    pImpl->mHaveWeights = false;
-    if (!isInitialized()){throw std::runtime_error("Class not initialized\n");}
-    if (nObservations < 1){throw std::invalid_argument("No observations\n");}
-    if (nFeatures < 1){throw std::invalid_argument("No features\n");}
-    if (X == nullptr){throw std::invalid_argument("X is NULL\n");}
-    // Allocate space
-    auto allocate = dDM::NumericTable::doAllocate;
-    auto nf = static_cast<size_t> (nFeatures);
-    auto no = static_cast<size_t> (nObservations);
-    pImpl->mX = dDM::HomogenNumericTable<double>::create(nf, no, allocate);
-    // Copy the data onto X
-    dDM::BlockDescriptor<double> block;
-    pImpl->mX->getBlockOfRows(0, no, daal::data_management::writeOnly, block);
-    auto ncopy = nf*no;
-    double *xPtr = block.getBlockPtr();
-    std::copy(X, X+ncopy, xPtr);
-    pImpl->mX->releaseBlockOfRows(block); 
-    pImpl->mHaveData = true;
-}
-
-/// Sets the data with observations weights
-void DBSCAN::setWeightedData(const int nObservations, const int nFeatures,
-                             const double *X, const double *weights)
+                     const std::vector<double> &X)
 {
     pImpl->mHaveData = false;
     pImpl->mHaveClusters = false;
@@ -147,39 +119,90 @@ void DBSCAN::setWeightedData(const int nObservations, const int nFeatures,
     if (!isInitialized()){throw std::runtime_error("Class not initialized");}
     if (nObservations < 1){throw std::invalid_argument("No observations");}
     if (nFeatures < 1){throw std::invalid_argument("No features");}
-    if (X == nullptr){throw std::invalid_argument("X is NULL");}
-    bool copyWeights = false;
-    if (weights != nullptr)
+    if (static_cast<int> (X.size()) != nObservations*nFeatures)
     {
-        auto minElement = std::min_element(weights, weights+nObservations);
-        if (*minElement <= 0)
-        {
-            throw std::invalid_argument("All weights must be positive");
-        }
-        copyWeights = true;
+        throw std::invalid_argument("X.size = " 
+                                  + std::to_string(X.size())
+                                  + " does not equal "
+                                  + std::to_string(nObservations*nFeatures));
     }
+    pImpl->mXFeatures = X;
+    pImpl->mWeights.resize(nObservations, 1);
+    pImpl->mNumberOfFeatures = nFeatures;
+    pImpl->mNumberOfObservations = nObservations;
+/*
     // Allocate space
-    auto allocate = dDM::NumericTable::doAllocate;
-    auto nf = static_cast<size_t> (nFeatures);
-    auto no = static_cast<size_t> (nObservations);
-    pImpl->mX = dDM::HomogenNumericTable<double>::create(nf, no, allocate);
-    pImpl->mW = dDM::HomogenNumericTable<double>::create(1, no, allocate, 1.0);
+    pImpl->mX
+         = dDM::HomogenNumericTable<double>::create(
+               nFeatures, nObservations, dDM::NumericTable::doAllocate);
     // Copy the data onto X
     dDM::BlockDescriptor<double> block;
-    pImpl->mX->getBlockOfRows(0, no, daal::data_management::writeOnly, block);
-    auto ncopy = nf*no;
+    pImpl->mX->getBlockOfRows(0, nObservations,
+                              daal::data_management::writeOnly, block);
     double *xPtr = block.getBlockPtr();
-    std::copy(X, X+ncopy, xPtr);
+    std::copy(X.begin(), X.begin() + nFeatures*nObservations, xPtr);
+    pImpl->mX->releaseBlockOfRows(block); 
+*/
+    pImpl->mHaveData = true;
+}
+
+/// Sets the data with observations weights
+void DBSCAN::setWeightedData(const int nObservations, const int nFeatures,
+                             const std::vector<double> &X,
+                             const std::vector<double> &weights)
+{
+    pImpl->mHaveData = false;
+    pImpl->mHaveClusters = false;
+    pImpl->mHaveWeights = false;
+    if (!isInitialized()){throw std::runtime_error("Class not initialized");}
+    if (nObservations < 1){throw std::invalid_argument("No observations");}
+    if (nFeatures < 1){throw std::invalid_argument("No features");}
+    if (static_cast<int> (X.size()) != nObservations*nFeatures)
+    {
+        throw std::invalid_argument("X.size = "
+                                  + std::to_string(X.size())
+                                  + " does not equal "
+                                  + std::to_string(nObservations*nFeatures));
+    }
+    if (static_cast<int> (weights.size()) != nObservations)
+    {
+        throw std::invalid_argument("weights.size = "
+                                  + std::to_string(weights.size())
+                                  + " does not equal "
+                                  + std::to_string(nObservations));
+    }
+    double minWeight = *std::min_element(weights.begin(), weights.end());
+    if (minWeight <= 0)
+    {
+        throw std::invalid_argument("All weights must be positive");
+    }
+    pImpl->mXFeatures = X;
+    pImpl->mWeights = weights;
+    pImpl->mNumberOfFeatures = nFeatures;
+    pImpl->mNumberOfObservations = nObservations;
+/*
+    // Allocate space
+    pImpl->mX
+        = dDM::HomogenNumericTable<double>::create(
+              nFeatures, nObservations, dDM::NumericTable::doAllocate);
+    pImpl->mW
+        = dDM::HomogenNumericTable<double>::create(
+              1, nObservations, dDM::NumericTable::doAllocate, 1.0);
+    // Copy the data onto X
+    dDM::BlockDescriptor<double> block;
+    pImpl->mX->getBlockOfRows(0, nObservations,
+                               daal::data_management::writeOnly, block);
+    double *xPtr = block.getBlockPtr();
+    std::copy(X.begin(), X.begin() + nFeatures*nObservations, xPtr);
     pImpl->mX->releaseBlockOfRows(block);
     // Copy the weights
-    if (copyWeights)
-    {
-        pImpl->mW->getBlockOfRows(0, no, daal::data_management::writeOnly, block); 
-        double *wPtr = block.getBlockPtr();
-        std::copy(weights, weights+nObservations, wPtr);
-        pImpl->mW->releaseBlockOfRows(block);
-        pImpl->mHaveWeights = true;
-    }
+    pImpl->mW->getBlockOfRows(0, nObservations,
+                              daal::data_management::writeOnly, block); 
+    double *wPtr = block.getBlockPtr();
+    std::copy(weights.begin(), weights.begin() + nObservations, wPtr);
+    pImpl->mW->releaseBlockOfRows(block);
+*/
+    pImpl->mHaveWeights = true;
     pImpl->mHaveData = true;
 }
 
@@ -191,6 +214,68 @@ void DBSCAN::cluster()
     pImpl->mLabels.resize(0);
     if (!isInitialized()){throw std::runtime_error("Class not initialized");}
     if (!haveData()){throw std::runtime_error("Data not yet set");}
+    auto nNumberOfObservations
+        = static_cast<int64_t> (pImpl->mNumberOfObservations); 
+    auto nNumberOfFeatures = static_cast<int64_t> (pImpl->mNumberOfFeatures);
+    const auto XTrain
+        = oneapi::dal::homogen_table::wrap<double>
+          (pImpl->mXFeatures.data(), nNumberOfObservations, nNumberOfFeatures);
+    const auto W
+        = oneapi::dal::homogen_table::wrap<double>
+          (pImpl->mWeights.data(), nNumberOfObservations, 1);
+
+    oneapi::dal::dbscan::descriptor 
+        <
+         double,
+         oneapi::dal::dbscan::method::brute_force,
+         oneapi::dal::dbscan::task::clustering
+        > dbscanDescriptor(pImpl->mEpsilon, pImpl->mMinObservations);
+    dbscanDescriptor.set_result_options(
+        oneapi::dal::dbscan::result_options::responses);
+    if (!pImpl->mHaveWeights)
+    {
+        const auto computeResult
+            = oneapi::dal::compute(dbscanDescriptor, XTrain);
+        pImpl->mNumberOfClusters = computeResult.get_cluster_count();
+        const oneapi::dal::table &clusterLabels = computeResult.get_responses();
+#ifndef NDEBUG
+        assert(clusterLabels.get_row_count() == nNumberOfObservations);
+        assert(clusterLabels.get_column_count() == 1);
+#endif
+        oneapi::dal::row_accessor<const int> accessor{clusterLabels};
+        pImpl->mLabels.resize(nNumberOfObservations, -1);
+        auto block = accessor.pull({0, clusterLabels.get_row_count()});
+        for (int64_t row = 0; row < clusterLabels.get_row_count(); ++row)
+        {
+            pImpl->mLabels[row] = block[row];
+        }
+        pImpl->mHaveClusters = true;
+    }
+    else
+    {
+        const auto W
+            = oneapi::dal::homogen_table::wrap<double>
+              (pImpl->mWeights.data(),
+               nNumberOfObservations,
+               1);
+        const auto computeResult
+            = oneapi::dal::compute(dbscanDescriptor, XTrain, W);
+        pImpl->mNumberOfClusters = computeResult.get_cluster_count();
+        const oneapi::dal::table &clusterLabels = computeResult.get_responses();
+#ifndef NDEBUG
+        assert(clusterLabels.get_row_count() == nNumberOfObservations);
+        assert(clusterLabels.get_column_count() == 1);
+#endif
+        oneapi::dal::row_accessor<const int> accessor{clusterLabels};
+        pImpl->mLabels.resize(nNumberOfObservations, -1);
+        auto block = accessor.pull({0, clusterLabels.get_row_count()});
+        for (int64_t row = 0; row < clusterLabels.get_row_count(); ++row)
+        {
+            pImpl->mLabels[row] = block[row];
+        }
+        pImpl->mHaveClusters = true;
+    } 
+/*
     dDBSCAN::Batch<double> dbscan(pImpl->mEpsilon, pImpl->mMinObservations);
     dbscan.input.set(dDBSCAN::data, pImpl->mX);
     if (pImpl->mHaveWeights){dbscan.input.set(dDBSCAN::weights, pImpl->mW);}
@@ -209,9 +294,10 @@ void DBSCAN::cluster()
     labels->getBlockOfRows(0, nRows, daal::data_management::readOnly, block);
     int *labelsPtr = block.getBlockPtr();
     pImpl->mLabels.resize(nRows);
-    std::copy(labelsPtr, labelsPtr+nRows, pImpl->mLabels.begin());
+    std::copy(labelsPtr, labelsPtr + nRows, pImpl->mLabels.begin());
     labels->releaseBlockOfRows(block);
     pImpl->mHaveClusters = true;
+*/
 }
 
 /// Initialized?
@@ -235,7 +321,7 @@ int DBSCAN::getNumberOfClusters() const noexcept
 /// Get the cluster assignments
 std::vector<int> DBSCAN::getLabels() const
 {
-    if (!haveLabels()){throw std::runtime_error("clustering not yet done");}
+    if (!haveLabels()){throw std::runtime_error("Clustering not yet done");}
     return pImpl->mLabels;
 } 
 
@@ -244,3 +330,8 @@ bool DBSCAN::haveLabels() const noexcept
     return pImpl->mHaveClusters;
 }
 
+/// Clustering algorithm
+IClusterer::Algorithm DBSCAN::getAlgorithm() const noexcept
+{
+    return IClusterer::Algorithm::DBSCAN;
+}

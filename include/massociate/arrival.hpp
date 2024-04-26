@@ -1,16 +1,35 @@
 #ifndef MASSOCIATE_ARRIVAL_HPP
 #define MASSOCIATE_ARRIVAL_HPP
 #include <memory>
-#include "massociate/enums.hpp"
+#include <chrono>
+//#include "massociate/enums.hpp"
 namespace MAssociate
 {
-class Pick;
-class WaveformIdentifier;
+ class Pick;
+ class WaveformIdentifier;
+}
+namespace MAssociate
+{
 /// @class Arrival "arrival.hpp" "massociate/arrival.hpp"
 /// @brief Defines an arrival.  This is an unassociated pick.
 /// @copyright Ben Baker (University of Utah) distributed under the MIT license.
 class Arrival
 {
+public:
+    /// @brief Some typical seismic phases.
+    enum class Phase
+    {
+        P, /*!< A first-arrival compressional arrival. */
+        S  /*!< A shear-wave arrival. */
+    };
+    /// @brief Defines the first motion of an arrival.
+    /// @copyright Ben Baker (University of Utah) distributed under the MIT license.
+    enum class FirstMotion
+    {
+        Up = 1,      /*!< Upwards (compressional) first motion. */
+        Unknown = 0, /*!< Unknown first motion. */
+        Down  =-1    /*!< Downwards (dilitational) first motion. */
+    };
 public:
     /// @name Constructors
     /// @{
@@ -75,35 +94,45 @@ public:
  
     /// @name Phase Name
     /// @{
+
     /// @brief Sets the phase name.
-    /// @param[in] phaseName  The name of the seismic phase.  
+    /// @param[in] phase  The name of the seismic phase.
+    void setPhase(const Arrival::Phase phase) noexcept;
+    /// @brief Sets the phase name.
+    /// @param[in] phase  The name of the seismic phase.  
     /// @throws std::invalid_argument if the phaseName is empty.
-    void setPhaseName(const std::string &phaseName);
+    void setPhase(const std::string &phaseName);
     /// @brief Gets the name of the seismic phase for this arrival.
     /// @result The name of the seismic phase.
     /// @throws std::invalid_argument if the phase name is not set.
-    /// @sa \c havePhaseName()
-    [[nodiscard]] std::string getPhaseName() const;
+    /// @sa \c havePhase()
+    [[nodiscard]] std::string getPhase() const;
     /// @result True indicates that the phase name is set.
-    [[nodiscard]] bool havePhaseName() const noexcept;
+    [[nodiscard]] bool havePhase() const noexcept;
     /// @}
 
     /// @name Arrival Time
     /// @{
+
     /// @brief Sets the arrival time.
-    /// @param[in] arrivalTime  The arrival time in UTC seconds since the epoch.
-    void setTime(double arrivalTime) noexcept;
+    /// @param[in] time  The arrival time (UTC) in micro-seconds since
+    ///                  the epoch.
+    void setTime(const std::chrono::microseconds &arrivalTime) noexcept;
+    /// @brief Sets the arrival time.
+    /// @param[in] time  The arrival time (UTC) in seconds since the epoch.
+    void setTime(double time) noexcept;
     /// @brief Gets the arrival time.
-    /// @result The arrival time in UTC seconds since the epoch.
+    /// @result The arrival time (UTC) in microseconds since the epoch.
     /// @throws std::runtime_error if the arrival time was not set.
     /// @sa \c haveTime()
-    [[nodiscard]] double getTime() const;
+    [[nodiscard]] std::chrono::microseconds getTime() const;
     /// @result True indicates that the arrival time was set.
     [[nodiscard]] bool haveTime() const noexcept;
     /// @}
 
     /// @name Identifier
     /// @{
+
     /// @brief Sets a unique arrival identifier number.  This likely will
     ///        be assigned by the real-time system but an algorithm as simple
     ///        as counting picks can be used.
@@ -118,8 +147,9 @@ public:
 
     /// @name Weight
     /// @{
-    /// @brief Defines the arrival's standard deviation (error) in seconds.
-    /// @param[in] std   The standard deviation in seconds.
+
+    /// @brief Defines the arrival's standard error (deviation) in seconds.
+    /// @param[in] standardError   The standard deviation in seconds.
     /// @throws std::invalid_argument if the standard deviation is not positive.
     /// @note When migrating with a Gaussian distribution this is the canonical
     ///       standard deviation.  When migrating with a boxcar function the
@@ -127,33 +157,35 @@ public:
     ///       where $W = B - A$ is the boxcar's width.  I find it convenient to
     ///       think of parameterizing boxcars based on width, so, in this case I
     ///       use \f$ \sigma = \frac{W}{2 \sqrt{3}} \f$. 
-    void setStandardDeviation(double std);
-    /// @result The arrival's standard deviation in seconds.
-    [[nodiscard]] double getStandardDeviation() const noexcept;
+    void setStandardError(double standardError);
+    /// @result The arrival's standard error in seconds.
+    [[nodiscard]] double getStandardError() const noexcept;
     /// @result The arrival's weight in 1/seconds.  This is computed from
-    ///         the standard deviation i.e., \f$ \frac{1}{\sigma} \f$.
+    ///         the standard error i.e., \f$ \frac{1}{\sigma} \f$.
     [[nodiscard]] double getWeight() const noexcept;
     /// @}
 
-    /// @name Polarity
+    /// @name First Motion
     /// @{
-    /// @brief Sets the polarity.
-    /// @param[in] polarity  The arrival's polarity.
-    void setPolarity(MAssociate::Polarity polarity) noexcept;
-    /// @brief Gets the arrival's polarity.
-    [[nodiscard]] MAssociate::Polarity getPolarity() const noexcept;
-    /// @brief Sets the polarities weight.  This is useful when the polarity
-    ///        is produced by an ML algorithm and has an accompanying posterior
-    ///        probability.
-    /// @param[in] weight  The polarity's weight.
+
+    /// @brief Sets the first motion.
+    /// @param[in] firstMotion  The arrival's first motion.
+    void setFirstMotion(Arrival::FirstMotion firstMotion) noexcept;
+    /// @brief Gets the arrival's first motion.
+    [[nodiscard]] MAssociate::Arrival::FirstMotion getFirstMotion() const noexcept;
+    /// @brief Sets the first motion's weight.  This is useful when the first
+    ///        motion is produced by an ML algorithm and has an accompanying
+    ///        posterior probability.
+    /// @param[in] weight  The first motion's weight.
     /// @throws std::invalid_argument if the weight is not positive.
-    void setPolarityWeight(double weight);
-    /// @result The polarity's weight.
-    [[nodiscard]] double getPolarityWeight() const noexcept;
+    void setFirstMotionWeight(double weight);
+    /// @result The first motoin's weight.
+    [[nodiscard]] double getFirstMotionWeight() const noexcept;
     /// @}
 
     /// @name Travel Time
     /// @{
+
     /// @brief Sets the travel time.
     /// @param[in] travelTime  The source to receiver travel time in seconds.
     /// @throws std::invalid_argument if this is negative
@@ -164,17 +196,6 @@ public:
     /// @result True indicates that the travel time was set.
     [[nodiscard]] bool haveTravelTime() const noexcept;
 
-    /// @name Static Correction
-    /// @{
-    /// @brief Sets the static currection such that the modeled pick time is
-    ///        \f$ T_{modeled} = T_0 + T + T_s \f$
-    ///        where \f$ T_0 \f$ is the origin time, \f$ T \f$ is the travel
-    ///        time and \f$ T_s \f$ is the static correction.
-    /// @param[in] correction   The static correction in seconds.
-    void setStaticCorrection(double correction) noexcept;
-    /// @result The static correction in seconds.
-    [[nodiscard]] double getStaticCorrection() const noexcept;
-    /// @}
 private:
     class ArrivalImpl;
     std::unique_ptr<ArrivalImpl> pImpl;

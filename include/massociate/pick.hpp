@@ -1,19 +1,33 @@
 #ifndef MASSOCIATE_PICK_HPP
 #define MASSOCIATE_PICK_HPP
 #include <memory>
-#include "massociate/enums.hpp"
+#include <chrono>
+#include <massociate/arrival.hpp>
 namespace MAssociate
 {
-class Arrival;
-class WaveformIdentifier;
+ class WaveformIdentifier;
+}
+namespace MAssociate
+{
 /// @class Pick "pick.hpp" "massociate/pick.hpp"
 /// @brief Defines a pick.  This need not be associated with a seismic event.
 /// @copyright Ben Baker (University of Utah) distributed under the MIT license.
 class Pick
 {
 public:
+    /// @brief This defines a hint as to the phase of the pick.
+    ///        This is usually informed by the machine learning detector.
+    enum class PhaseHint
+    {
+         Unknown, /*!< There is no phase hint. */
+         P,       /*!< The phase hint is a primary arrival. */
+         S,       /*!< The phase hint is a shear-wave arrival. */
+         Noise    /*!< The phase hint that this is a noise pick. */
+    };
+public:
     /// @name Constructors
     /// @{
+
     /// @brief Constructor
     Pick();
     /// @brief Copy constructor.
@@ -27,6 +41,7 @@ public:
 
     /// @name Operators
     /// @{
+
     /// @brief Copy assignment operator.
     /// @param[in] pick  The pick class to copy to this.
     /// @result A deep copy of the pick.
@@ -41,6 +56,8 @@ public:
 
     /// @name Destructors
     /// @{
+
+    /// @brief Destructor.
     ~Pick();
     /// @brief Resets the class.
     void clear() noexcept;
@@ -48,6 +65,7 @@ public:
 
     /// @name Waveform Identifier
     /// @{
+
     /// @brief Sets the station, network, channel, and location code on which
     ///        the pick was observed.
     /// @param[in] waveformIdentifier  The station, network, channel, and
@@ -66,35 +84,44 @@ public:
  
     /// @name Phase Name
     /// @{
-    /// @brief Sets the phase name.
-    /// @param[in] phaseName  The name of the seismic phase.  
+
+     /// @brief Sets the phase hint as informed by the detector.
+    /// @param[in] phaseHint   The inferred seismic phase type.
+    void setPhaseHint(PhaseHint phaseHint) noexcept;
+    /// @brief Sets the phase hint as informed by the detector.
+    /// @param[in] phaseHint  The inferred seismic phase type.
     /// @throws std::invalid_argument if the phaseName is empty.
-    void setPhaseName(const std::string &phaseName);
-    /// @brief Gets the name of the seismic phase for this pick.
-    /// @result The name of the seismic phase.
+    void setPhaseHint(const std::string &phaseHint);
+    /// @brief Gets the name of the seismic phase hint for this pick.
+    /// @result The name of the seismic phase hint.
     /// @throws std::invalid_argument if the phase name is not set.
     /// @sa \c havePhaseName()
-    [[nodiscard]] std::string getPhaseName() const;
+    [[nodiscard]] std::string getPhaseHint() const;
     /// @result True indicates that the phase name is set.
-    [[nodiscard]] bool havePhaseName() const noexcept;
+    [[nodiscard]] bool havePhaseHint() const noexcept;
     /// @}
 
     /// @name Pick Time
     /// @{
+
     /// @brief Sets the pick time.
-    /// @param[in] pickTime  The pick time in UTC seconds since the epoch.
-    void setTime(double pickTime) noexcept;
+    /// @param[in] time  The pick time (UTC) in microseconds since the epoch.
+    void setTime(const std::chrono::microseconds &time) noexcept;
+    /// @brief Sets the pick time.
+    /// @param[in] time  The pick time (UTC) in seconds since the epoch.
+    void setTime(double time) noexcept;
     /// @brief Gets the pick time.
-    /// @result The pick time in UTC seconds since the epoch.
+    /// @result The pick time (UTC) in microseconds since the epoch.
     /// @throws std::runtime_error if the pick time was not set.
     /// @sa \c haveTime()
-    [[nodiscard]] double getTime() const;
+    [[nodiscard]] std::chrono::microseconds getTime() const;
     /// @result True indicates that the pick time was set.
     [[nodiscard]] bool haveTime() const noexcept;
     /// @}
 
     /// @name Identifier
     /// @{
+
     /// @brief Sets a unique pick identifier number.  This likely will
     ///        be assigned by the real-time system but an algorithm as simple
     ///        as counting picks can be used.
@@ -109,8 +136,9 @@ public:
 
     /// @name Weight
     /// @{
-    /// @brief Defines the pick's standard deviation (error) in seconds.
-    /// @param[in] std   The standard deviation in seconds.
+
+    /// @brief Defines the pick's standard error (deviation) in seconds.
+    /// @param[in] standardError  The standard error in seconds.
     /// @throws std::invalid_argument if the standard deviation is not positive.
     /// @note When migrating with a Gaussian distribution this is the canonical
     ///       standard deviation.  When migrating with a boxcar function the
@@ -118,42 +146,31 @@ public:
     ///       where $W = B - A$ is the boxcar's width.  I find it convenient to
     ///       think of parameterizing boxcars based on width, so, in this case I
     ///       use \f$ \sigma = \frac{W}{2 \sqrt{3}} \f$. 
-    void setStandardDeviation(double std);
-    /// @result The pick's standard deviation in seconds.
-    [[nodiscard]] double getStandardDeviation() const noexcept;
+    void setStandardError(double standardError);
+    /// @result The pick's standard error in seconds.
+    [[nodiscard]] double getStandardError() const noexcept;
     /// @result The pick's weight in 1/seconds.  This is computed from
-    ///         the standard deviation i.e., \f$ \frac{1}{\sigma} \f$.
+    ///         the standard error i.e., \f$ \frac{1}{\sigma} \f$.
     [[nodiscard]] double getWeight() const noexcept;
     /// @}
 
     /// @name Polarity
     /// @{
-    /// @brief Sets the polarity.
-    /// @param[in] polarity  The pick's polarity.
-    void setPolarity(MAssociate::Polarity polarity) noexcept;
-    /// @brief Gets the pick's polarity.
-    [[nodiscard]] MAssociate::Polarity getPolarity() const noexcept;
-    /// @brief Sets the polarities weight.  This is useful when the polarity
-    ///        is produced by an ML algorithm and has an accompanying posterior
-    ///        probability.
-    /// @param[in] weight  The polarity's weight.
-    /// @throws std::invalid_argument if the weight is not positive.
-    void setPolarityWeight(double weight);
-    /// @result The polarity's weight.
-    [[nodiscard]] double getPolarityWeight() const noexcept;
-    /// @} 
 
-    /// @name Static Correction
-    /// @{
-    /// @brief Sets the static currection such that the modeled pick time is
-    ///        \f$ T_{modeled} = T_0 + T + T_s \f$ 
-    ///        where \f$ T_0 \f$ is the origin time, \f$ T \f$ is the travel
-    ///        time and \f$ T_s \f$ is the static correction.
-    /// @param[in] correction   The static correction in seconds.
-    void setStaticCorrection(double correction) noexcept;
-    /// @result The static correction in seconds.
-    [[nodiscard]] double getStaticCorrection() const noexcept;
-    /// @}
+    /// @brief Sets the polarity.
+    /// @param[in] firstMotion  The pick's first motion.
+    void setFirstMotion(MAssociate::Arrival::FirstMotion firstMotion) noexcept;
+    /// @brief Gets the pick's first motion.
+    [[nodiscard]] MAssociate::Arrival::FirstMotion getFirstMotion() const noexcept;
+    /// @brief Sets the first motion's weight.  This is useful when the first 
+    ///        motion is produced by an ML algorithm and has an accompanying
+    ///        posterior probability.
+    /// @param[in] weight  The first motion's weight.
+    /// @throws std::invalid_argument if the weight is not positive.
+    void setFirstMotionWeight(double weight);
+    /// @result The first motion's weight.
+    [[nodiscard]] double getFirstMotionWeight() const noexcept;
+    /// @} 
 private:
     class PickImpl;
     std::unique_ptr<PickImpl> pImpl;

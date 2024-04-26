@@ -1,25 +1,32 @@
-#include <iostream>
+#include <string>
 #ifndef NDEBUG
 #include <cassert>
 #endif
-#include <uLocator/travelTimeCalculatorMap.hpp>
 #include <uLocator/station.hpp>
+#include <uLocator/travelTimeCalculatorMap.hpp>
 #include <uLocator/uussRayTracer.hpp>
-#include <uLocator/position/ynpRegion.hpp>
 #include <uLocator/position/utahRegion.hpp>
+#include <uLocator/position/ynpRegion.hpp>
 #include <uLocator/position/wgs84.hpp>
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/benchmark/catch_benchmark.hpp>
-#include "massociate/migrator.hpp"
-#include "massociate/arrival.hpp"
-#include "massociate/event.hpp"
 #include "massociate/waveformIdentifier.hpp"
-#include "analyticSignals.hpp"
-#include "massociate/particleSwarm.hpp"
-#include "massociate/dividedRectangles.hpp"
-#include "examples.hpp"
+#include "massociate/arrival.hpp"
+#include "massociate/pick.hpp"
 
-/*
+namespace
+{
+
+MAssociate::Pick arrivalToPick(const MAssociate::Arrival &arrival)
+{
+    MAssociate::Pick pick;
+
+    pick.setIdentifier(arrival.getIdentifier());
+    pick.setWaveformIdentifier(arrival.getWaveformIdentifier());
+    pick.setTime(arrival.getTime());
+    pick.setStandardError(arrival.getStandardError());
+    pick.setPhaseHint(arrival.getPhase());
+    return pick;
+}
+
 std::pair<MAssociate::Arrival, ULocator::Station>
     toArrival(const int64_t identifier,
               const std::string &network,
@@ -31,7 +38,7 @@ std::pair<MAssociate::Arrival, ULocator::Station>
                               const double stationLongitude,
                               const double stationElevation,
                               const bool isUtah = true,
-                              const int utmZone = 12)
+                              const int utmZone = 12) 
 {
     MAssociate::WaveformIdentifier waveformIdentifier;
     waveformIdentifier.setNetwork(network);
@@ -49,22 +56,22 @@ std::pair<MAssociate::Arrival, ULocator::Station>
     uStation.setElevation(stationElevation);
     ULocator::Position::WGS84 stationLocation{stationLatitude, stationLongitude, utmZone};
     if (isUtah)
-    {
+    {   
         uStation.setGeographicPosition(stationLocation,
                                        ULocator::Position::UtahRegion {});
-    }
+    }   
     else
-    {
+    {   
         uStation.setGeographicPosition(stationLocation,
                                        ULocator::Position::YNPRegion {});
-    }
+    }   
     return std::pair {arrival, uStation};
 }
 
 struct CreateTestCase60557072
 {
     CreateTestCase60557072(bool addNoisePicks = false)
-    {
+    {   
         auto [a1,  s1]  = ::toArrival(1,  "UU", "KNB",  "P", 1703612966.086906, 0.066805, 37.0166,-112.822,  1715.0, true, 12);
         auto [a2,  s2]  = ::toArrival(2,  "AE", "U15A", "P", 1703612967.977675, 0.102402, 36.428, -112.2915, 2489.0, true, 12);
         auto [a3,  s3]  = ::toArrival(3,  "UU", "LCMT", "P", 1703612971.257604, 0.065439, 37.0118,-113.2439, 1411.0, true, 12);
@@ -108,7 +115,7 @@ struct CreateTestCase60557072
                         0.0, xSource, ySource, eventDepth, applyCorrection));
                     travelTimeCalculatorMap->insert(stations[i], "P",
                                                     std::move(pCalculator));
-                }
+                }   
             }
             else
             {
@@ -123,8 +130,8 @@ struct CreateTestCase60557072
                         0.0, xSource, ySource, eventDepth, applyCorrection));
                     travelTimeCalculatorMap->insert(stations[i], "S",
                                                     std::move(sCalculator));
-                }
-            }
+                }   
+            }   
         }
 #ifndef NDEBUG
         assert(arrivals.size() == travelTimes.size());
@@ -143,112 +150,5 @@ struct CreateTestCase60557072
     double eventDepth{20200.0};
     double eventTime{1703612958.6499996};
 };
-*/
 
-TEST_CASE("MAssociate::IMigrator", "BaseClass")
-{
-    constexpr bool addNoise{false};
-    CreateTestCase60557072 test{addNoise};
-
-    MAssociate::IMigrator migrator;
-    migrator.setGeographicRegion(test.region);
-    migrator.setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap));
-    migrator.setArrivals(test.arrivals);
-    migrator.setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar);
-    auto [x, y]
-        = test.region.geographicToLocalCoordinates(
-             test.eventLatitude, test.eventLongitude);
-    double imageReference{0};
-    for (size_t i = 0; i < test.arrivals.size(); ++i)
-    {
-        for (size_t j = i + 1; j < test.arrivals.size(); ++j)
-        {
-            auto tObserved1 = test.arrivals.at(i).getTime().count()*1.e-6;
-            auto tObserved2 = test.arrivals.at(j).getTime().count()*1.e-6;
-            auto tEstimated1 = test.travelTimes.at(i);
-            auto tEstimated2 = test.travelTimes.at(j);
-            auto weight1 = std::sqrt(3)*test.arrivals.at(i).getStandardError();
-            auto weight2 = std::sqrt(3)*test.arrivals.at(j).getStandardError();
-            imageReference = imageReference 
-                           + ::analyticBoxcarCorrelation(
-                                  tObserved1, tObserved2,
-                                  tEstimated1, tEstimated2,
-                                  weight1, weight2); 
-        }
-    }
-    auto image = migrator.evaluate(x, y, test.eventDepth);
-    REQUIRE(std::abs(image - imageReference) < 0.001);
-}
-
-TEST_CASE("Massociate::Optimizer", "[ParticleSwarm]")
-{
-    SECTION("No noise")
-    {
-    constexpr bool addNoisePicks{false};
-    CreateTestCase60557072 test(addNoisePicks);
-
-    auto migrator = std::make_unique<MAssociate::IMigrator> ();
-    REQUIRE_NOTHROW(migrator->setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap)));
-    REQUIRE_NOTHROW(migrator->setGeographicRegion(test.region));
-    REQUIRE_NOTHROW(migrator->setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar));
-    REQUIRE_NOTHROW(migrator->setMaximumEpicentralDistance(450000));
- 
-    CHECK(migrator->getPickSignalToMigrate() == MAssociate::IMigrator::PickSignal::Boxcar);
-    CHECK(std::abs(migrator->getMaximumEpicentralDistance() - 450000) < 0.1);
-
-    MAssociate::ParticleSwarm pso;
-    REQUIRE_NOTHROW(pso.setMigrator(std::move(migrator)));
-    std::vector<MAssociate::Arrival> reverseArrivals(test.arrivals.size());
-    std::reverse_copy(test.arrivals.begin(), test.arrivals.end(), reverseArrivals.begin());
-    REQUIRE_NOTHROW(pso.setArrivals(test.arrivals));
-    REQUIRE_NOTHROW(pso.setDepth(20000)); 
-    
-    pso.optimize(); 
-    REQUIRE(pso.haveOptimum());
-    auto bestHypocenter = pso.getOptimalHypocenter();
-    CHECK(std::abs(std::get<0> (bestHypocenter) - test.eventLatitude) < 0.25);
-    CHECK(std::abs(std::get<1> (bestHypocenter) - test.eventLongitude) < 0.25);
-    CHECK(std::abs(std::get<2> (bestHypocenter) - pso.getDepth()) < 1);
-    CHECK(pso.getContributingArrivals().size() == test.arrivals.size());
-    
-    pso.setArrivals(reverseArrivals); 
-    pso.optimize();
-//pso.setNumberOfParticles(25);
-    REQUIRE(pso.haveOptimum());
-    bestHypocenter = pso.getOptimalHypocenter();
-    CHECK(std::abs(std::get<0> (bestHypocenter) - test.eventLatitude) < 0.25);
-    CHECK(std::abs(std::get<1> (bestHypocenter) - test.eventLongitude) < 0.25);
-    CHECK(std::abs(std::get<2> (bestHypocenter) - pso.getDepth()) < 1);
-    CHECK(pso.getContributingArrivals().size() == test.arrivals.size());
-    //double eventDepth{2022.0};
-    //double eventTime{1703612958.6499996
-    //std::cout << event.getLatitude() <<  " " << event.getLongitude() - 360 << " " << " " << event.getOriginTime().count()*1.e-6 << std::endl;
-    }
-
-    SECTION("With Noise Picks")
-    {
-    constexpr bool addNoisePicks{true};
-    CreateTestCase60557072 test(addNoisePicks);
-
-    auto migrator = std::make_unique<MAssociate::IMigrator> (); 
-    migrator->setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap));
-    migrator->setGeographicRegion(test.region);
-    migrator->setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar);
-    migrator->setMaximumEpicentralDistance(250000);
-
-    MAssociate::ParticleSwarm pso;
-    pso.setMigrator(std::move(migrator));
-    pso.setArrivals(test.arrivals);
-    pso.setDepth(20000);
-    
-    pso.optimize(); 
-    //REQUIRE(pso.haveOptimum());
-    auto [bestLatitude, bestLongitude, bestDepth] = pso.getOptimalHypocenter();
-    CHECK(std::abs(bestLatitude  - test.eventLatitude) < 0.25);
-    CHECK(std::abs(bestLongitude - test.eventLongitude) < 0.25);
-    CHECK(std::abs(bestDepth     - pso.getDepth()) < 1);
-
-std::cout << bestLatitude << " " << bestLongitude << " " << bestDepth << std::endl;
-std::cout << pso.getContributingArrivals().size() << std::endl;
-    }
 }

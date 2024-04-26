@@ -1,42 +1,40 @@
+#include <string>
 #include "massociate/waveformIdentifier.hpp"
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
 
-namespace
-{
-TEST(MAssociate, WaveformIdentifier)
+TEST_CASE("MAssociate", "[WaveformIdentifier]")
 {
     MAssociate::WaveformIdentifier waveid;
-    std::string network = "UU";
-    std::string station = "CAPU";
-    std::string channel = "EHZ";
-    std::string location = "01";
+    std::string network{"UU"};
+    std::string station{"CAPU"};
+    std::string channel{"EHZ"};
+    std::string location{"01"};
 
-    EXPECT_TRUE(waveid.isEmpty());
+    REQUIRE(waveid.isEmpty());
 
     waveid.setNetwork(network);
-    EXPECT_FALSE(waveid.isEmpty());
-    EXPECT_EQ(waveid.getNetwork(), network);
+    REQUIRE(!waveid.isEmpty());
+    REQUIRE(waveid.getNetwork() == network);
     waveid.setStation(station);
-    EXPECT_EQ(waveid.getStation(), station);
+    REQUIRE(waveid.getStation() == station);
     waveid.setChannel(channel);
-    EXPECT_EQ(waveid.getChannel(), channel);
+    REQUIRE(waveid.getChannel() == channel);
     waveid.setLocationCode(location);
-    EXPECT_EQ(waveid.getLocationCode(), location);
+    REQUIRE(waveid.getLocationCode() == location);
 
-    MAssociate::WaveformIdentifier waveidCopy(waveid);
-    EXPECT_EQ(waveidCopy.getNetwork(), network);
-    EXPECT_EQ(waveidCopy.getStation(), station);
-    EXPECT_EQ(waveidCopy.getChannel(), channel);
-    EXPECT_EQ(waveidCopy.getLocationCode(), location);
+    MAssociate::WaveformIdentifier waveidCopy{waveid};
+    REQUIRE(waveidCopy.getNetwork() == network);
+    REQUIRE(waveidCopy.getStation() == station);
+    REQUIRE(waveidCopy.getChannel() == channel);
+    REQUIRE(waveidCopy.getLocationCode() == location);
 
-    EXPECT_TRUE(waveidCopy == waveid);
+    REQUIRE(waveidCopy == waveid);
 
     waveid.clear();
-    EXPECT_TRUE(waveidCopy != waveid);
-    EXPECT_TRUE(waveid.isEmpty());
+    REQUIRE(waveidCopy != waveid);
+    REQUIRE(waveid.isEmpty());
 
     MAssociate::WaveformIdentifier waveid2(network, station, channel, location);
-    EXPECT_EQ(waveid2, waveidCopy);
+    REQUIRE(waveid2 == waveidCopy);
 }
-}
-

@@ -1,17 +1,106 @@
 #include <string>
 #include <cmath>
 #include <vector>
-#include "utilities.hpp"
-#include "massociate/associatorParameters.hpp"
+#include <uLocator/position/knownUtahEvent.hpp>
 #include "massociate/associator.hpp"
-#include "massociate/mesh/cartesian/points3d.hpp"
 #include "massociate/arrival.hpp"
 #include "massociate/event.hpp"
+#include "massociate/migrator.hpp"
 #include "massociate/pick.hpp"
 #include "massociate/waveformIdentifier.hpp"
-#include "private/weightedStatistics.hpp"
-#include <gtest/gtest.h>
+#include "massociate/dbscan.hpp"
+#include "massociate/particleSwarm.hpp"
+#include "massociate/dividedRectangles.hpp"
+#include "examples.hpp"
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
 
+TEST_CASE("MAssociate::Associator", "[60557072][PSO]")
+{
+    auto knownUtahEvents = ULocator::Position::getKnownUtahEvents();
+    std::vector<std::unique_ptr<ULocator::Position::IKnownLocalLocation>> searchLocations;
+    for (const auto &event : knownUtahEvents)
+    {
+        searchLocations.push_back(event.clone());
+    }
+
+    auto clusterer = std::make_unique<MAssociate::DBSCAN> ();
+    clusterer->initialize(0.3, 5);
+    auto optimizer = std::make_unique<MAssociate::ParticleSwarm> ();
+
+    constexpr bool addNoisePicks{false};
+    CreateTestCase60557072 test(addNoisePicks);
+    std::vector<MAssociate::Pick> picks;
+    for (const auto &arrival : test.arrivals)
+    {
+        picks.push_back(::arrivalToPick(arrival));
+    }
+
+    auto migrator = std::make_unique<MAssociate::IMigrator> (); 
+    REQUIRE_NOTHROW(migrator->setDefaultSearchLocations(searchLocations));
+    REQUIRE_NOTHROW(migrator->setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap)));
+    REQUIRE_NOTHROW(migrator->setGeographicRegion(test.region));
+    REQUIRE_NOTHROW(migrator->setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar));
+    REQUIRE_NOTHROW(migrator->setMaximumEpicentralDistance(250000));
+
+    REQUIRE_NOTHROW(optimizer->setMigrator(std::move(migrator)));
+    optimizer->setDepth(6000);
+    optimizer->enableSearchDepth();
+    optimizer->setNumberOfParticles(100);
+    optimizer->setNumberOfGenerations(50);
+
+    MAssociate::Associator associator;
+    REQUIRE_NOTHROW(associator.setOptimizer(std::move(optimizer)));
+    REQUIRE_NOTHROW(associator.setClusterer(std::move(clusterer)));
+    REQUIRE_NOTHROW(associator.setPicks(picks));
+    associator.associate();
+    auto events = associator.getEvents();
+    REQUIRE(events.size() == 1);
+}
+
+TEST_CASE("MAssociate::Associator", "[60557072][DIRECT]")
+{
+    auto knownUtahEvents = ULocator::Position::getKnownUtahEvents();
+    std::vector<std::unique_ptr<ULocator::Position::IKnownLocalLocation>> searchLocations;
+    for (const auto &event : knownUtahEvents)
+    {
+        searchLocations.push_back(event.clone());
+    }
+
+    auto clusterer = std::make_unique<MAssociate::DBSCAN> ();
+    clusterer->initialize(1.0, 5);
+
+    constexpr bool addNoisePicks{false};
+    CreateTestCase60557072 test(addNoisePicks);
+    std::vector<MAssociate::Pick> picks;
+    for (const auto &arrival : test.arrivals)
+    {
+        picks.push_back(::arrivalToPick(arrival));
+    }
+    auto migrator = std::make_unique<MAssociate::IMigrator> ();
+    REQUIRE_NOTHROW(migrator->setDefaultSearchLocations(searchLocations));
+    REQUIRE_NOTHROW(migrator->setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap)));
+    REQUIRE_NOTHROW(migrator->setGeographicRegion(test.region));
+    REQUIRE_NOTHROW(migrator->setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar));
+    REQUIRE_NOTHROW(migrator->setMaximumEpicentralDistance(250000));
+
+    auto optimizer = std::make_unique<MAssociate::DividedRectangles> ();
+    REQUIRE_NOTHROW(optimizer->setMigrator(std::move(migrator)));
+    optimizer->setDepth(6000);
+    optimizer->enableSearchDepth();
+    optimizer->setNumberOfInitialObjectiveFunctionEvaluations(200);
+    optimizer->setNumberOfObjectiveFunctionEvaluations(500);
+    optimizer->setRefinement(25000);
+
+    MAssociate::Associator associator;
+    REQUIRE_NOTHROW(associator.setOptimizer(std::move(optimizer)));
+    REQUIRE_NOTHROW(associator.setClusterer(std::move(clusterer)));
+    REQUIRE_NOTHROW(associator.setPicks(picks));
+    associator.associate();
+    auto events = associator.getEvents();
+    REQUIRE(events.size() == 1);
+}
+/*
 namespace
 {
 
@@ -244,11 +333,9 @@ TEST(MAssociate, Associator)
     }
     // Associate
     associator.associate(); 
-/*
-    std::vector<double> xSources({1000, 5000, 5000});
-    std::vector<double> ySources({2000, 6000, 6000});
-    std::vector<double> zSources({5000
-*/
+    //std::vector<double> xSources({1000, 5000, 5000});
+    //std::vector<double> ySources({2000, 6000, 6000});
+    //std::vector<double> zSources({5000
     // Check the associations
     EXPECT_EQ(associator.getNumberOfEvents(), 3);
     auto events = associator.getEvents();
@@ -268,3 +355,4 @@ TEST(MAssociate, Associator)
 }
 
 }
+*/
