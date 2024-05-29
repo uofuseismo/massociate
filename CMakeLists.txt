@@ -84,7 +84,8 @@ target_include_directories(massociate
                            PRIVATE ${NLOPT_INCLUDE_DIRS}
                                    ${oneDAL_INCLUDE_DIRS}
                                    ${UMPS_INCLUDE_DIR}
-                                   ${uLocator_INCLUDE_DIR})
+                                   ${uLocator_INCLUDE_DIR}
+                           PUBLIC $<INSTALL_INTERFACE:include>)
 if (${pagmo_FOUND})
    target_include_directories(massociate PRIVATE Pagmo::pagmo)
    target_link_libraries(massociate PRIVATE Pagmo::pagmo)

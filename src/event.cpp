@@ -280,6 +280,12 @@ void Event::addArrival(const Arrival &arrival)
         return;
     }
     pImpl->mArrivals.push_back(arrival);
+    std::sort(pImpl->mArrivals.begin(), 
+              pImpl->mArrivals.end(),
+              [](const Arrival &lhs, const Arrival &rhs)
+              {
+                  return lhs.getTime() < rhs.getTime();
+              });
 }
 
 int Event::canAddArrival(const Arrival &arrival,

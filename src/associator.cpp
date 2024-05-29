@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <string>
 #include <limits>
+#include <cmath>
 #include <map>
 #include <set>
 #include <umps/logging/standardOut.hpp>
@@ -911,6 +912,72 @@ void Associator::associate(const std::chrono::seconds &minimumOriginTime,
             pImpl->mLogger->debug("No new clusters created - breaking...");
             break;
         }
+    }
+    // Next, let's attempt to merge split events
+    if (pImpl->mEvents.size() > 1)
+    {
+        auto nInitialEvents = static_cast<int> (pImpl->mEvents.size());
+        std::vector<bool> deleteEvent(nInitialEvents, false);
+        std::vector<Event> newEvents;
+        bool truncateEvents{false};
+        for (int i = 0; i < nInitialEvents; ++i)
+        {
+            if (deleteEvent[i]){continue;}
+            auto originTime_i = pImpl->mEvents[i].getOriginTime().count();
+            auto latitude_i   = pImpl->mEvents[i].getLatitude();
+            auto longitude_i  = pImpl->mEvents[i].getLongitude(); 
+            for (int j = i + 1; j < nInitialEvents; ++j)
+            {
+                if (deleteEvent[j]){continue;}
+                auto originTime_j = pImpl->mEvents[j].getOriginTime().count();
+                auto latitude_j   = pImpl->mEvents[j].getLatitude();
+                auto longitude_j  = pImpl->mEvents[j].getLongitude();
+                if (std::abs(originTime_i - originTime_j) < std::chrono::microseconds {1000000}.count() &&
+                    std::abs(latitude_i - latitude_j) < 0.1 &&
+                    std::abs(longitude_i - longitude_j) < 0.1)
+                {
+                    auto arrivals_i = pImpl->mEvents[i].getArrivals();
+                    auto arrivals_j = pImpl->mEvents[j].getArrivals();
+                    if (arrivals_i.size() >= arrivals_j.size())
+                    { 
+                        truncateEvents = true;
+                        deleteEvent[j] = true; 
+                        pImpl->mLogger->debug("Merging " + std::to_string(i) + " into " + std::to_string(j)); 
+                        for (auto &arrival : arrivals_j)
+                        {
+                            if (pImpl->mEvents[i].canAddArrival(arrival, false) >= 0)
+                            {
+                                pImpl->mEvents[i].addArrival(arrival);
+                            }
+                        }
+                    } 
+                    else
+                    {
+                        truncateEvents = true;
+                        deleteEvent[i] = true;
+                        pImpl->mLogger->debug("Merging " + std::to_string(j) + " into " + std::to_string(i));
+                        //auto event = pImpl->mEvents[j];
+                        for (auto &arrival : arrivals_i)
+                        {
+                            if (pImpl->mEvents[j].canAddArrival(arrival, false) >= 0)
+                            {
+                                pImpl->mEvents[j].addArrival(arrival);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (truncateEvents)
+        {
+            auto eventsCopy = pImpl->mEvents;
+            pImpl->mEvents.clear();
+            for (int i = 0; i < nInitialEvents; ++i)
+            {
+                if (!deleteEvent[i]){pImpl->mEvents.push_back(std::move(eventsCopy[i]));}
+            }
+            pImpl->mLogger->debug("Merged " + std::to_string(nInitialEvents -  pImpl->mEvents.size()) + " events");
+        } 
     }
     // Finally build the definitive list of unassociated picks (i.e.,
     // picks that were not attached to events)
