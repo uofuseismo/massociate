@@ -161,6 +161,51 @@ bool IMigrator::haveTravelTimeCalculatorMap() const noexcept
     return (pImpl->mTravelTimeCalculatorMap != nullptr);
 }
 
+/// Insert a travel time calculator
+void IMigrator::addTravelTimeCalculator(
+    const ULocator::Station &station,
+    const std::string &phase,
+    std::unique_ptr<const ULocator::ITravelTimeCalculator> &&calculator)
+{
+    if (calculator == nullptr)
+    {
+        throw std::invalid_argument("Calculator is NULL");
+    }
+    if (!station.haveNetwork())
+    {
+        throw std::invalid_argument("Network not set");
+    }
+    if (!station.haveName())
+    {
+        throw std::invalid_argument("Station not set");
+    }
+    if (phase.empty()){throw std::invalid_argument("Phase not defined");}
+    if (!haveTravelTimeCalculatorMap())
+    {
+        pImpl->mLogger->debug("No map exists - creating new one...");
+        auto travelTimeCalculatorMap
+            = std::make_unique<ULocator::TravelTimeCalculatorMap> ();
+    }
+#ifndef NDEBUG
+    assert(haveTravelTimeCalculatorMap());
+#endif
+    auto name = station.getNetwork() + "."
+              + station.getName() + "."
+              + phase;
+    if (!pImpl->mTravelTimeCalculatorMap->contains(station, phase))
+    {
+        pImpl->mLogger->debug("Inserting " + name + "...");
+        pImpl->mTravelTimeCalculatorMap->insert(station, phase,
+                                                std::move(calculator));
+    }
+    else
+    {
+        pImpl->mLogger->error("Could not add " + name);
+        throw std::runtime_error("Calculator already exists for " + name);
+    }
+}
+
+
 /// Sets the arrivals
 void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
 {

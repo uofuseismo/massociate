@@ -124,7 +124,7 @@ public:
 
     /// @brief The event depth in meters.
     /// @param[in] depth   The event depth.  This increases positive down from
-    ///                    some reference such as sea-level..
+    ///                    some reference such as sea-level.
     void setDepth(double depth) noexcept;
     /// @result The event's depth in meters.
     /// @throws std::runtime_error of \c haveDepth() is false.

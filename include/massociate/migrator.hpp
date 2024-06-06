@@ -9,6 +9,8 @@ namespace UMPS::Logging
 }
 namespace ULocator
 {
+ class Station;
+ class ITravelTimeCalculator;
  class TravelTimeCalculatorMap;
  namespace Position 
  {
@@ -80,6 +82,18 @@ public:
     /// @param[in,out] calculatorMap  The travel time calculator map.  On exit,
     ///                               calculatorMap's behavior is undefined.
     virtual void setTravelTimeCalculatorMap(std::unique_ptr<ULocator::TravelTimeCalculatorMap> &&calculatorMap);
+    /// @brief During on-line application this allows for the insertion of
+    ///        a new travel time calculator.
+    /// @param[in] station     The station with naming (network and station
+    ///                        name) information.
+    /// @param[in] phase       The phase - e.g., P or S.
+    /// @param[in] calculator  The travel time calculator for this
+    ///                        station/phase pair.
+    /// @note If the calculator for this station phase does not exist
+    ///       then this function will try to make it.
+    virtual void addTravelTimeCalculator(const ULocator::Station &station,
+                                         const std::string &phase,
+                                         std::unique_ptr<const ULocator::ITravelTimeCalculator> &&calculator);
     /// @result True indicates the travel time calculator map was set.
     virtual bool haveTravelTimeCalculatorMap() const noexcept; 
     /// @result A pointer to the travel time calculator map.
