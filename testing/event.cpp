@@ -87,7 +87,7 @@ TEST_CASE("MAssociate::Event", "[event]")
     badArrivals[1].setPhase("P"); // P at S
     badArrivals[2].setPhase("S"); // S at P
 
-    // Copy c'tor
+    // Copy constructor
     MAssociate::Event eCopy(event);
     REQUIRE(eCopy.getIdentifier() == evid);
     REQUIRE(std::abs(eCopy.getLatitude() - latitude) < 1.e-10);
@@ -97,13 +97,16 @@ TEST_CASE("MAssociate::Event", "[event]")
     //REQUIRE(std::abs(eCopy.getXPosition() - x) < 1.e-14);
     //REQUIRE(std::abs(eCopy.getYPosition() - y) < 1.e-14);
     //REQUIRE(std::abs(eCopy.getZPosition() - z) < 1.e-14);
+    std::array<int, 3> permutation{0, 2, 1}; // Arrivals are sorted in increasing time
     auto arrivalsBack = eCopy.getArrivals(); 
-    for (int ia=0; ia<static_cast<int> (arrivals.size()); ++ia)
+    for (int ia = 0; ia < static_cast<int> (arrivals.size()); ++ia)
     {
         REQUIRE(arrivalsBack[ia].getWaveformIdentifier() ==
-                arrivals[ia].getWaveformIdentifier());
-        REQUIRE(arrivalsBack[ia].getPhase() == arrivals[ia].getPhase());
-        REQUIRE(arrivalsBack[ia].getTime() == arrivals[ia].getTime());
+                arrivals[permutation[ia]].getWaveformIdentifier());
+        REQUIRE(arrivalsBack[ia].getPhase() ==
+                arrivals[permutation[ia]].getPhase());
+        REQUIRE(arrivalsBack[ia].getTime() ==
+                arrivals[permutation[ia]].getTime());
         REQUIRE(eCopy.canAddArrival(arrivals[ia], true) >= 0);
         REQUIRE(eCopy.canAddArrival(arrivals[ia], false) <= 0);
         REQUIRE(eCopy.canAddArrival(badArrivals[ia], true) < 0);

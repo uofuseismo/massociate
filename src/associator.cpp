@@ -395,6 +395,23 @@ bool Associator::haveClusterer() const noexcept
     return pImpl->mClusterer != nullptr;
 }
 
+bool Associator::haveTravelTimeCalculator(const Pick &pick) const
+{
+    if (!haveOptimizer()){return false;}
+    if (!pick.haveWaveformIdentifier())
+    {
+        throw std::invalid_argument("Waveform identifier not set");
+    }
+    auto waveformIdentifier = pick.getWaveformIdentifier();
+    auto network = waveformIdentifier.getNetwork();
+    auto station = waveformIdentifier.getStation();
+    std::string phaseHint{"P"}; // Default to P
+    if (pick.havePhaseHint()){phaseHint = pick.getPhaseHint();}
+    const auto migratorHandle = pImpl->mOptimizer->getMigratorHandle();
+    return
+        migratorHandle->haveTravelTimeCalculator(network, station, phaseHint);
+}
+
 void Associator::setPicks(const std::vector<Pick> &picks)
 {
     auto temporaryPicks = picks;
@@ -410,7 +427,7 @@ void Associator::setPicks(std::vector<Pick> &&picks)
     pImpl->mUnassociatedPicks.clear();
     if (picks.empty()){return;}
     // First - validate the picks that can be added
-    const auto migratorHandle = pImpl->mOptimizer->getMigratorHandle();
+    //const auto migratorHandle = pImpl->mOptimizer->getMigratorHandle();
     std::vector<Pick> pickList;
     pickList.reserve(picks.size());
     for (auto &pick : picks)
@@ -453,6 +470,23 @@ void Associator::setPicks(std::vector<Pick> &&picks)
             {
                 pick.setPhaseHint(Pick::PhaseHint::P);
             }
+            try
+            {
+                if (!haveTravelTimeCalculator(pick))
+                {
+                    auto phase = pick.getPhaseHint();
+                    pImpl->mLogger->warn("No calculator for "
+                                       + network + "." + station + "." + phase
+                                       + "; skipping...");
+                    continue;
+                 }
+            }
+            catch (const std::exception &e)
+            {
+                pImpl->mLogger->warn(e.what());
+                continue;
+            }
+/*
             // Can we find this station in our map?
             try
             {
@@ -471,6 +505,7 @@ void Associator::setPicks(std::vector<Pick> &&picks)
                 pImpl->mLogger->warn(e.what());
                 continue;
             }
+*/
             // Okay - add it
             pickList.push_back(std::move(pick));
         }

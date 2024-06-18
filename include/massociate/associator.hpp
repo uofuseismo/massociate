@@ -75,7 +75,13 @@ public:
     ///         pick time is not set.
     /// @throws std::runtime_error if the class is not initialized.
     void addPick(const Pick &pick);
-    /// @return The number of picks.
+    /// @param[in] pick  The pick to check for a corresponding travel time 
+    ///                  calculator.
+    /// @result true indicates the travel time calculator exists for this pick.
+    /// @throws std::invalid_argument if network, station, or phase cannot be
+    ///         obtained from the pick.
+    [[nodiscard]] bool haveTravelTimeCalculator(const Pick &pick) const;
+    /// @result The number of picks.
     [[nodiscard]] int getNumberOfPicks() const noexcept;
     /// @brief Clears the picks.
     /// @note This should be used when seeking to migrate a new batch of
