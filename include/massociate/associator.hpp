@@ -37,11 +37,11 @@ public:
                     int nPArrivalsToNucleate = 3); //const AssociatorParameters &parameters);
     /// @result The minimum number of arrivals required to associate.
     [[nodiscard]] int getMinimumNumberOfArrivalsToNucleate() const noexcept;    
-void setMinimumNumberOfPArrivalsToNucleate(int nArrivals);
+    /// @brief Sets the minimum number of P arrivals required to nucleate
+    ///             an event.
+    //void setMinimumNumberOfPArrivalsToNucleate(int nArrivals);
     /// @result The minimum number of P arrivals required to associate.
     [[nodiscard]] int getMinimumNumberOfPArrivalsToNucleate() const noexcept;
-    /// @return True indicates that the class is initialized.
-    [[nodiscard]] bool isInitialized() const noexcept;
     /// @}
 
     /// @name Step 2: Set the optimizer and clustering engines
