@@ -412,6 +412,21 @@ bool Associator::haveTravelTimeCalculator(const Pick &pick) const
         migratorHandle->haveTravelTimeCalculator(network, station, phaseHint);
 }
 
+void Associator::addTravelTimeCalculator(
+    const ULocator::Station &station,
+    const std::string &phase,
+    std::unique_ptr<const ULocator::ITravelTimeCalculator> &&calculator)
+{
+    if (!haveOptimizer())
+    {
+        throw std::invalid_argument("Optimizer not set");
+    }
+    auto migratorHandle = pImpl->mOptimizer->getMigratorHandle(); 
+    // Will throw
+    migratorHandle->addTravelTimeCalculator(
+        station, phase, std::move(calculator));
+}
+
 void Associator::setPicks(const std::vector<Pick> &picks)
 {
     auto temporaryPicks = picks;

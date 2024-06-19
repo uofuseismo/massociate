@@ -4,6 +4,11 @@
 #include <chrono>
 #include <vector>
 #include <umps/logging/log.hpp>
+namespace ULocator
+{
+ class Station;
+ class ITravelTimeCalculator;
+}
 namespace MAssociate
 {
  class Arrival;
@@ -81,6 +86,18 @@ public:
     /// @throws std::invalid_argument if network, station, or phase cannot be
     ///         obtained from the pick.
     [[nodiscard]] bool haveTravelTimeCalculator(const Pick &pick) const;
+    /// @brief During on-line application this allows for the insertion of
+    ///        a new travel time calculator.
+    /// @param[in] station     The station with naming (network and station
+    ///                        name) information.
+    /// @param[in] phase       The phase - e.g., P or S.
+    /// @param[in] calculator  The travel time calculator for this
+    ///                        station/phase pair.
+    /// @note If the calculator for this station phase does not exist
+    ///       then this function will try to make it.
+    virtual void addTravelTimeCalculator(const ULocator::Station &station,
+                                         const std::string &phase,
+                                         std::unique_ptr<const ULocator::ITravelTimeCalculator> &&calculator);
     /// @result The number of picks.
     [[nodiscard]] int getNumberOfPicks() const noexcept;
     /// @brief Clears the picks.
