@@ -585,7 +585,8 @@ void Associator::setPicks(std::vector<Pick> &&picks)
                       + phase1;
         if (!haveBetterMatch) 
         {
-            pImpl->mLogger->debug("Will retain " + pickName);
+            pImpl->mLogger->debug("Will retain " + pickName
+                                + " with time " + std::to_string(pick1));
             keepPick[i] = true;
         }
         else
@@ -740,7 +741,6 @@ void Associator::associate(const std::chrono::seconds &minimumOriginTime,
         }
         // For the arrivals contributing to the maximum cluster on origin time
         auto contributions = pImpl->mOptimizer->getContributingArrivals();
-//std::cout << "contribution size: " << contributions.size() << std::endl;
         std::vector<double> originTimes, weights;
         originTimes.reserve(contributions.size());
         weights.reserve(contributions.size());
@@ -772,7 +772,6 @@ void Associator::associate(const std::chrono::seconds &minimumOriginTime,
         }
         auto nCandidateClusters = pImpl->mClusterer->getNumberOfClusters();
         auto labels = pImpl->mClusterer->getLabels();
-//std::cout << nCandidateClusters << std::endl;
 //for (const auto &l : labels){std::cout << l << std::endl;}
 //getchar();
         // Enforce causality in the clusters.  Tie-breaking between, say,
@@ -899,20 +898,30 @@ void Associator::associate(const std::chrono::seconds &minimumOriginTime,
                         contribution.first.getTravelTime());
                 }
                 double clusterOriginTime{0};
-                try
+                if (pImpl->mOptimizer->getMigratorHandle()->getSignalType() ==
+                    IMigrator::SignalType::DoubleDifference)
                 {
-                    originTimeCalculator.setArrivalTimes(clusterArrivalTimes,
-                                                         clusterWeights);
-                    originTimeCalculator.setTravelTimes(clusterTravelTimes);
-                    originTimeCalculator.optimize();
-                    clusterOriginTime = originTimeCalculator.getTime();
+                    try
+                    {
+                        originTimeCalculator.setArrivalTimes(clusterArrivalTimes,
+                                                             clusterWeights);
+                        originTimeCalculator.setTravelTimes(clusterTravelTimes);
+                        originTimeCalculator.optimize();
+                        clusterOriginTime = originTimeCalculator.getTime();
+                    }
+                    catch (const std::exception &e)
+                    {
+                        pImpl->mLogger->warn(
+                            "Origin time calculation failed for cluster "
+                          + std::to_string(iCluster));
+                        continue;
+                    }
                 }
-                catch (const std::exception &e)
+                else
                 {
-                    pImpl->mLogger->warn(
-                        "Origin time calculation failed for cluster "
-                      + std::to_string(iCluster));
-                    continue;
+                    clusterOriginTime
+                        = pImpl->mOptimizer->getOptimalOriginTime();
+//std::cout << "lifted: " << clusterOriginTime  << std::endl;
                 }
                 if (clusterOriginTime < minimumOriginTime.count() ||
                     clusterOriginTime > maximumOriginTime.count())
@@ -939,21 +948,82 @@ void Associator::associate(const std::chrono::seconds &minimumOriginTime,
                         + e.what());
                     continue;
                 }
-                // Add the arrivals
-                for (const auto &arrival : clusterContributions)
+                // Sometimes, we can double bind a station/phase. Clean that up.
+                std::vector<bool> stationPhaseMask(clusterContributions.size(), false);
+                for (size_t iArrival = 0;
+                     iArrival < clusterContributions.size(); ++iArrival)
                 {
-                    try
+                    // Keep the best fitting
+                    auto waveformIdentifier_i
+                        = clusterContributions[iArrival].first.getWaveformIdentifier();
+                    auto network_i = waveformIdentifier_i.getNetwork();
+                    auto station_i = waveformIdentifier_i.getStation();
+                    auto phase_i = clusterContributions[iArrival].first.getPhase();
+                    double minimumAbsoluteResidual
+                        = std::abs(clusterContributions[iArrival].first.getTime().count()*1.e-6
+                                - (clusterOriginTime
+                                 + clusterContributions[iArrival].first.getTravelTime()));
+                    for (size_t jArrival = 0;
+                         jArrival < clusterContributions.size(); ++jArrival)
                     {
-                        event.addArrival(arrival.first);
+                        if (iArrival == jArrival){continue;}
+                        auto waveformIdentifier_j
+                            = clusterContributions[jArrival].first.getWaveformIdentifier();
+                        auto network_j = waveformIdentifier_j.getNetwork();
+                        auto station_j = waveformIdentifier_j.getStation();
+                        auto phase_j = clusterContributions[jArrival].first.getPhase();
+                        // Match
+                        if (network_i == network_j &&
+                            station_i == station_j &&
+                            phase_i == phase_j)
+                        {
+                            double residualJ
+                                = std::abs(clusterContributions[jArrival].first.getTime().count()*1.e-6
+                                        - (clusterOriginTime
+                                         + clusterContributions[jArrival].first.getTravelTime()));
+                            // Retain the best - mask the other
+                            if (residualJ < minimumAbsoluteResidual)
+                            {
+                                minimumAbsoluteResidual = residualJ;
+                                stationPhaseMask[iArrival] = true; // Mask i
+                            }
+                            else
+                            {
+                                stationPhaseMask[jArrival] = true; // Mask j
+                            }
+                        }
                     }
-                    catch (const std::exception &e)
-                    {
-                        pImpl->mLogger->warn(
-                           "Could not add arrival to event.  Failed with "
-                         + std::string {e.what()});
-                   }
                 }
-                pImpl->mEvents.push_back(std::move(event));
+                // Add the arrivals
+                for (size_t iArrival = 0; iArrival < clusterContributions.size(); ++iArrival)
+                {
+                    if (!stationPhaseMask[iArrival])
+                    {
+                        try
+                        {
+                            event.addArrival(std::move(clusterContributions[iArrival].first));
+                        }
+                        catch (const std::exception &e)
+                        {
+                            pImpl->mLogger->warn(
+                                "Could not add arrival to event.  Failed with "
+                              + std::string {e.what()});
+                        }
+                    }
+                    else
+                    {
+                        auto waveformIdentifier = clusterContributions[iArrival].first.getWaveformIdentifier(); 
+                        auto phase = clusterContributions[iArrival].first.getPhase();
+                        pImpl->mLogger->warn("Masked dupcliate arrival: "
+                                           + waveformIdentifier.getNetwork() + "."
+                                           + waveformIdentifier.getStation() + "."
+                                           + phase);
+                    }
+                }
+                if (event.getNumberOfArrivals() > 0)
+                {
+                    pImpl->mEvents.push_back(std::move(event));
+                }
             }
         }
         unassociatedPicksPreviousIteration = unassociatedPicks;
@@ -1061,11 +1131,22 @@ void Associator::associate(const std::chrono::seconds &minimumOriginTime,
                   {
                      return lhs.getOriginTime() < rhs.getOriginTime();
                   });
+        auto nTriggers = std::count_if(pImpl->mEvents.begin(),
+                                       pImpl->mEvents.end(),
+                                       [](const auto &event)
+                                       {
+                                          return event.getType() ==
+                                                 Event::Type::Trigger;
+                                       });
+        auto nEarthquakes = static_cast<int> (pImpl->mEvents.size())
+                          - nTriggers;
         pImpl->mLogger->info("Associated "
                            + std::to_string(nAssociated)
                            + " picks into "
-                           + std::to_string(pImpl->mEvents.size())
-                           + " event(s)");
+                           + std::to_string(nEarthquakes)
+                           + " event(s) and "
+                           + std::to_string(nTriggers)
+                           + " trigger(s)");
     }
 }
 

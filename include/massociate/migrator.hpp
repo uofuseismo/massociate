@@ -81,7 +81,8 @@ public:
     /// @brief Sets the travel time calculator map.
     /// @param[in,out] calculatorMap  The travel time calculator map.  On exit,
     ///                               calculatorMap's behavior is undefined.
-    virtual void setTravelTimeCalculatorMap(std::unique_ptr<ULocator::TravelTimeCalculatorMap> &&calculatorMap);
+    virtual void setTravelTimeCalculatorMap(std::unique_ptr<ULocator::TravelTimeCalculatorMap> &&calculatorMap,
+                                            int numberOfNeighbors =-1);
     /// @brief During on-line application this allows for the insertion of
     ///        a new travel time calculator.
     /// @param[in] station     The station with naming (network and station
@@ -160,11 +161,11 @@ public:
     /// @result True indicates the arrivals were not set.
     [[nodiscard]] bool haveArrivals() const noexcept;
 
-    /// @brief Evaluates at known locations.
-    [[nodiscard]] virtual std::vector<double> evaluateAtKnownLocations() const;
+    /// @brief Computes the origin times and migration image at known location.
+    [[nodiscard]] virtual std::vector<std::pair<double, double>> evaluateAtKnownLocations() const;
     /// @throws std::runtime_error if \c haveTravelTimeCalculatorMap() is false
     ///         or \c haveArrivals() is false is false.
-    [[nodiscard]] virtual double evaluate(double x, double y, double z) const;
+    [[nodiscard]] virtual double evaluate(double x, double y, double z, double time) const;
 
     /// @result The list of arrivals that contributed to the stack.
     /// @note If the signal to migrate has global support then this will be

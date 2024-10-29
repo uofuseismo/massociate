@@ -148,11 +148,14 @@ struct CreateTestCase60557072
 TEST_CASE("MAssociate::IMigrator", "BaseClass")
 {
     constexpr bool addNoise{false};
-    CreateTestCase60557072 test{addNoise};
 
+    SECTION("Double Difference")
+    {
+    CreateTestCase60557072 test{addNoise};
     MAssociate::IMigrator migrator;
+    migrator.setSignalType(MAssociate::IMigrator::SignalType::DoubleDifference);
     migrator.setGeographicRegion(test.region);
-    migrator.setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap));
+    migrator.setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap), test.arrivals.size());
     migrator.setArrivals(test.arrivals);
     migrator.setPickSignalToMigrate(MAssociate::IMigrator::PickSignal::Boxcar);
     auto [x, y]
@@ -176,13 +179,51 @@ TEST_CASE("MAssociate::IMigrator", "BaseClass")
                                   weight1, weight2); 
         }
     }
-    auto image = migrator.evaluate(x, y, test.eventDepth);
+    const double time{0};
+    auto image = migrator.evaluate(x, y, test.eventDepth, time);
     REQUIRE(std::abs(image - imageReference) < 0.001);
+    }
+
+    SECTION("Absolute")
+    {
+    CreateTestCase60557072 test{addNoise};
+    MAssociate::IMigrator migrator;
+    migrator.setSignalType(MAssociate::IMigrator::SignalType::Absolute);
+    migrator.setGeographicRegion(test.region);
+    migrator.setTravelTimeCalculatorMap(std::move(test.travelTimeCalculatorMap), test.arrivals.size());
+    migrator.setArrivals(test.arrivals);
+    auto [x, y]
+        = test.region.geographicToLocalCoordinates(
+             test.eventLatitude, test.eventLongitude);
+    double imageReference{0};
+    for (size_t i = 0; i < test.arrivals.size(); ++i)
+    {   
+        double tObserved = test.arrivals.at(i).getTime().count()*1.e-6;
+        double tEstimated = test.eventTime + test.travelTimes.at(i);
+        double standardDeviation = test.arrivals.at(i).getStandardError();
+        double residual = tObserved - tEstimated;
+        if (std::abs(residual) < 3*standardDeviation)
+        {
+            double xi = residual/standardDeviation;
+            double phi = 1./std::sqrt(2*M_PI)*std::exp(-0.5*(xi*xi));
+            double x1 = (tObserved - 3*standardDeviation - tObserved)/standardDeviation;
+            double x2 = (tObserved + 3*standardDeviation - tObserved)/standardDeviation;                  
+            double Phi1 = 0.5*(1 + std::erf(x1*std::sqrt(1./2.)));
+            double Phi2 = 0.5*(1 + std::erf(x2*std::sqrt(1./2.)));
+            imageReference
+                 = imageReference
+                 + phi/(standardDeviation*(Phi2 - Phi1));
+        }
+    }
+    auto image = migrator.evaluate(x, y, test.eventDepth, test.eventTime);
+    REQUIRE(std::abs(image - imageReference) < 0.001);
+    }
 }
 
-TEST_CASE("Massociate::Optimizer", "[ParticleSwarm]")
+
+TEST_CASE("MAssociate::Optimizer", "[ParticleSwarm]")
 {
-    SECTION("No noise")
+    SECTION("No Noise Double Difference")
     {
     constexpr bool addNoisePicks{false};
     CreateTestCase60557072 test(addNoisePicks);
@@ -225,7 +266,7 @@ TEST_CASE("Massociate::Optimizer", "[ParticleSwarm]")
     //std::cout << event.getLatitude() <<  " " << event.getLongitude() - 360 << " " << " " << event.getOriginTime().count()*1.e-6 << std::endl;
     }
 
-    SECTION("With Noise Picks")
+    SECTION("With Noise Picks Double Difference")
     {
     constexpr bool addNoisePicks{true};
     CreateTestCase60557072 test(addNoisePicks);

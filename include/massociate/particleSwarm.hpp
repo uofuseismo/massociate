@@ -107,6 +107,7 @@ public:
     [[nodiscard]] double getOptimalValue() const override final;
     [[nodiscard]] bool haveOptimum() const noexcept override final;
     [[nodiscard]] std::tuple<double, double, double> getOptimalHypocenter() const override final;
+    [[nodiscard]] double getOptimalOriginTime() const override final;
     [[nodiscard]] std::vector<std::pair<Arrival, double>> getContributingArrivals() const override final;
 
     /// @result True indicates we were able to migrate the arrivals and create

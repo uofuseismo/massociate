@@ -1,8 +1,11 @@
 #include <iostream>
+#include <iomanip>
 #include <set>
 #include <string>
 #include <vector>
+#include <map>
 #include <uLocator/station.hpp>
+#include <uLocator/optimizers/originTime.hpp>
 #include <uLocator/travelTimeCalculatorMap.hpp>
 #include <uLocator/travelTimeCalculator.hpp>
 #include <uLocator/position/knownLocalLocation.hpp>
@@ -12,8 +15,39 @@
 #include "massociate/arrival.hpp"
 #include "massociate/waveformIdentifier.hpp"
 #include "analyticSignals.hpp"
+#include "knn.hpp"
 
 using namespace MAssociate; 
+
+namespace
+{
+double truncatedGaussianNormalization(const double maxStandardDeviations)
+{
+    double PhiLower = 0.5*(1 + std::erf(-maxStandardDeviations*M_SQRT1_2));
+    double PhiUpper = 0.5*(1 + std::erf( maxStandardDeviations*M_SQRT1_2));
+    double PhiNormalization = 1./(PhiUpper - PhiLower);
+    const double gaussianNormalization = 1./std::sqrt(2*M_PI);
+    return gaussianNormalization*PhiNormalization;
+}
+double truncatedGaussianContribution(
+    const double observation,
+    const double estimate,
+    const double standardDeviation,
+    const double normalization, // 1/[ sqrt(2*pi)) x (Phi_u - Phi_l) ]
+    const double maxStandardDeviations,
+    const bool acceptAnyway = false)
+{
+    auto residual = observation - estimate;
+    double likelihood = 0; 
+    if (acceptAnyway ||
+        std::abs(residual) < maxStandardDeviations*standardDeviation)
+    {
+        double xi = residual/standardDeviation;
+        likelihood = (normalization/standardDeviation)*std::exp(-0.5*(xi*xi));
+    }
+    return likelihood;
+}
+}
 
 class IMigrator::IMigratorImpl
 {
@@ -38,11 +72,14 @@ public:
     std::vector<double> mObservations;
     std::vector<double> mStandardDeviations;
     std::vector<int> mArrivalToUniqueStationPhaseMap;
+    std::set<std::set<int>> mFeasibleArrivalSets;
     std::vector<std::pair<double, double>> mDifferentialArrivalPairs;
     std::vector<std::pair<double, double>>
          mDifferentialArrivalPairsStandardDeviations;
     std::vector<std::pair<int, int>> mDifferentialArrivalIndicesPairs;
     std::vector<std::pair<int, int>> mDifferentialTablePairs;
+    std::map<std::string, std::vector<std::string>> mStationNeighbors;
+    double mMaximumStandardDeviation{3};
     double mMaximumEpicentralDistance{1.e30};
     IMigrator::SignalType
         mSignalType{IMigrator::SignalType::DoubleDifference};
@@ -124,13 +161,38 @@ IMigrator::PickSignal IMigrator::getPickSignalToMigrate() const noexcept
 
 /// Travel time calculator map
 void IMigrator::setTravelTimeCalculatorMap(
-    std::unique_ptr<ULocator::TravelTimeCalculatorMap> &&map)
+    std::unique_ptr<ULocator::TravelTimeCalculatorMap> &&map,
+    int numberOfNeighbors)
 {
     if (map == nullptr)
     {   
         throw std::invalid_argument("Travel time calculator map is NULL");
     }   
+    pImpl->mStationNeighbors.clear();
     pImpl->mTravelTimeCalculatorMap = std::move(map);
+    // Figure out each station's neighbors
+    auto stationPhasePairs = pImpl->mTravelTimeCalculatorMap->getStationPhasePairs();
+    std::vector<std::string> stationNames;
+    std::vector<double> xs;
+    std::vector<double> ys;
+    for (const auto &stationPhasePair : stationPhasePairs)
+    {
+        auto stationName = stationPhasePair.first.getNetwork() + "."
+                         + stationPhasePair.first.getName();
+        auto [x, y] = stationPhasePair.first.getLocalCoordinates();
+        if (std::find(stationNames.begin(),
+                      stationNames.end(),
+                      stationName) == stationNames.end())
+        {
+            xs.push_back(x);
+            ys.push_back(y); 
+            stationNames.push_back(stationName);
+        }
+    }
+    if (numberOfNeighbors > 0)
+    {
+        pImpl->mStationNeighbors = ::cluster(xs, ys, stationNames, numberOfNeighbors);
+    }
 }
 
 const ULocator::TravelTimeCalculatorMap 
@@ -222,10 +284,6 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
     pImpl->mObservations.clear();
     pImpl->mStandardDeviations.clear();
     pImpl->mArrivalToUniqueStationPhaseMap.clear();
-    pImpl->mDifferentialArrivalPairs.clear();
-    pImpl->mDifferentialArrivalPairsStandardDeviations.clear();
-    pImpl->mDifferentialArrivalIndicesPairs.clear();
-    pImpl->mDifferentialTablePairs.clear();
     pImpl->mContributingArrivals.clear();
     pImpl->mHaveContributingArrivals = false;
 
@@ -234,6 +292,13 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
     pImpl->mObservations.reserve(arrivals.size());
     pImpl->mStandardDeviations.reserve(arrivals.size());
     pImpl->mArrivalToUniqueStationPhaseMap.reserve(arrivals.size());
+
+    pImpl->mDifferentialArrivalPairs.clear();
+    pImpl->mDifferentialArrivalPairsStandardDeviations.clear();
+    pImpl->mDifferentialArrivalIndicesPairs.clear();
+    pImpl->mDifferentialTablePairs.clear();
+
+    pImpl->mFeasibleArrivalSets.clear();
 
     std::vector<std::string> namePhases;
     namePhases.reserve(arrivals.size());
@@ -300,7 +365,9 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
         pImpl->mArrivals.push_back(arrival);
         pImpl->mArrivalToUniqueStationPhaseMap.push_back(
             uniqueStationPhaseIndex);
-        pImpl->mObservations.push_back(arrival.getTime().count()*1.e-6);
+        double arrivalTime = arrival.getTime().count()*1.e-6;
+        pImpl->mObservations.push_back(arrivalTime);
+        //reductionTime = std::min(arrivalTime, reductionTime);
         pImpl->mStandardDeviations.push_back(arrival.getStandardError());
         // For computational reasons keep a unique list 
         if (!duplicate)
@@ -334,15 +401,36 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
                 = pImpl->mUniqueStationPhases.at(iUniqueStationPhase).second;
             auto arrivalTime1 = pImpl->mObservations.at(i);
             auto std1 = pImpl->mStandardDeviations.at(i);
+            const auto &neighborList = pImpl->mStationNeighbors.find(name1);
+            // Do I even have enough neighbors?
+            int nNeighboringArrivals{0};
+            if (neighborList != pImpl->mStationNeighbors.end())
+            {
+                for (int j = i + 1; j < nArrivalsSet; ++j)
+                {
+                    auto jUniqueStationPhase
+                        = pImpl->mArrivalToUniqueStationPhaseMap.at(j);
+                    auto name2 = pImpl->mUniqueStationPhases.at(jUniqueStationPhase).first.getNetwork()
+                               + "."
+                               + pImpl->mUniqueStationPhases.at(jUniqueStationPhase).first.getName();
+                    if (std::find(neighborList->second.begin(),
+                                  neighborList->second.end(),
+                                  name2) != neighborList->second.end())
+                    {
+                        nNeighboringArrivals = nNeighboringArrivals + 1;
+                    }
+                }
+            }
+            // Make the pairs
             for (int j = i + 1; j < nArrivalsSet; ++j)
             {
                 auto jUniqueStationPhase
-                    = pImpl->mArrivalToUniqueStationPhaseMap.at(j);
-                auto name2 = pImpl->mUniqueStationPhases.at(jUniqueStationPhase).first.getNetwork()
+                    = pImpl->mArrivalToUniqueStationPhaseMap[j];
+                auto name2 = pImpl->mUniqueStationPhases[jUniqueStationPhase].first.getNetwork()
                            + "."
-                           + pImpl->mUniqueStationPhases.at(jUniqueStationPhase).first.getName();
+                           + pImpl->mUniqueStationPhases[jUniqueStationPhase].first.getName();
                 auto phase2
-                    = pImpl->mUniqueStationPhases.at(jUniqueStationPhase).second;
+                    = pImpl->mUniqueStationPhases[jUniqueStationPhase].second;
                 auto arrivalTime2 = pImpl->mObservations.at(j);
                 auto std2 = pImpl->mStandardDeviations.at(j);
                 if (phase2 != "P" && phase2 != "S"){continue;}
@@ -362,6 +450,21 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
                         continue;
                     }
                 }
+                // Is this one of my neighbors?
+                if (neighborList != pImpl->mStationNeighbors.end())
+                {
+                    bool isNeighbor{false};
+                    if (nNeighboringArrivals >= 1)
+                    {
+                        if (std::find(neighborList->second.begin(),
+                                      neighborList->second.end(),
+                                      name2) != neighborList->second.end())
+                        {
+                            isNeighbor = true;
+                        }
+                    }
+                    if (!isNeighbor){continue;}
+                }
                 // Add it
                 auto iTable = pImpl->mArrivalToUniqueStationPhaseMap.at(i);
                 auto jTable = pImpl->mArrivalToUniqueStationPhaseMap.at(j);
@@ -379,8 +482,9 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
                     // distributions.  This is really just solving for x where
                     // sigma = sqrt( (2x)^2 / 12) = 2x/sqrt(12) = x/sqrt(3)
                     // so the new sigma is sqrt(3)*sigma
-                    std1Use = std::sqrt(3)*std1;
-                    std2Use = std::sqrt(3)*std2;
+                    constexpr double sqrt3{1.7320508075688772};
+                    std1Use = sqrt3*std1;
+                    std2Use = sqrt3*std2;
                 }
                 pImpl->mDifferentialArrivalPairsStandardDeviations.push_back(
                     std::pair {std1Use, std2Use});
@@ -391,9 +495,9 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
             }
         }
         pImpl->mLogger->debug("Set " + std::to_string(nArrivalsSet)
-                         + " phase arrivals which has "
-                         + std::to_string(pImpl->mDifferentialTablePairs.size())
-                         + " phase pairs");
+                            + " phase arrivals which has "
+                            + std::to_string(pImpl->mDifferentialTablePairs.size())
+                            + " phase pairs");
     }
     else
     {
@@ -406,9 +510,112 @@ void IMigrator::setArrivals(const std::vector<Arrival> &arrivals)
         // the other FORU arrival).  My guess is the number of
         // feasible sets is the product of duplicate arrivals 
         // on each station.
-        throw std::runtime_error("Option not handled");
         pImpl->mLogger->debug("Set " + std::to_string(nArrivalsSet)
                             + " phase arrivals");
+        namePhases.clear();
+        namePhases.reserve(nArrivalsSet);
+        for (const auto &arrival : pImpl->mArrivals)
+        {
+            const auto &waveformIdentifier = arrival.getWaveformIdentifier();
+            auto name = waveformIdentifier.getNetwork() + "." 
+                      + waveformIdentifier.getStation() + "."
+                      + arrival.getPhase();
+            namePhases.push_back(std::move(name));
+        }
+        // Make the realizable combinations
+        std::set<std::set<int>> arrivalSets;
+        for (int iArrival = 0; iArrival < nArrivalsSet; ++iArrival)
+        {
+            std::set<int> initialArrivalSet{ iArrival };
+            std::set<std::string> namePhasesInSet{ namePhases[iArrival] };
+            // Now try to build the set
+            for (int jArrival = 0; jArrival < nArrivalsSet; ++jArrival)
+            {
+                if (iArrival == jArrival){continue;} // Already have it
+                if (!namePhasesInSet.contains(namePhases[jArrival]))
+                {
+                    initialArrivalSet.insert(jArrival);
+                    namePhasesInSet.insert(namePhases[jArrival]);
+                }
+            }
+//std::cout << "candidate set set: " << initialArrivalSet.size() << std::endl;
+            // Does each arrival in the set have a neighbor?
+            std::set<int> arrivalSet;
+            for (const auto &candidateArrivalIndex : initialArrivalSet)
+            {
+                auto arrival = pImpl->mArrivals[candidateArrivalIndex];
+                auto name = arrival.getWaveformIdentifier().getNetwork()
+                          + "."
+                          + arrival.getWaveformIdentifier().getStation();
+                const auto &neighborList = pImpl->mStationNeighbors.find(name);
+                // Look through the spatial neighbors and try to find a
+                // corresponding pick
+                if (neighborList != pImpl->mStationNeighbors.end())
+                {
+//for (const auto &neighbor : neighborList->second){std::cout<< neighbor << std::endl;}
+//std::cout << std::endl;
+                    bool hasNeighbor{false};
+                    for (const auto &otherArrivalIndex : initialArrivalSet)
+                    {
+                        // This is me
+                        if (candidateArrivalIndex == otherArrivalIndex)
+                        {
+                            continue;
+                        }
+                        // 
+                        arrival = pImpl->mArrivals[otherArrivalIndex]; 
+                        auto otherName
+                            = arrival.getWaveformIdentifier().getNetwork()
+                            + "."
+                            + arrival.getWaveformIdentifier().getStation();
+                        if (std::find(neighborList->second.begin(),
+                                      neighborList->second.end(),
+                                      otherName) != neighborList->second.end())
+                        {
+                            hasNeighbor = true;
+                            break;
+                        }
+                    }
+                    if (hasNeighbor)
+                    {
+                        arrivalSet.insert(candidateArrivalIndex);
+                    }
+                    else
+                    {
+                    }
+                }
+                else
+                {
+                    arrivalSet.insert(candidateArrivalIndex);
+                }
+            }
+                          
+            // Does the set already exist?
+            if (!arrivalSets.contains(arrivalSet))
+            {
+//                std::cout << "--------------" << std::endl;
+//                for (auto &idx : arrivalSet){std::cout << pImpl->mArrivals.at(idx).getIdentifier() << std::endl;}
+//                std::cout << "--------------" << std::endl;
+                if (arrivalSet.size() >= 4) // TODO hardwired
+                {
+                    pImpl->mLogger->debug(
+                        "Adding candidate arrival set with "
+                      + std::to_string(arrivalSet.size()) + " picks");
+/*
+                    std::cout << "--------------" << std::endl;
+                    for (auto &idx : arrivalSet)
+                    {
+                        std::cout << pImpl->mArrivals.at(idx).getWaveformIdentifier().getNetwork() + "."
+                                  << pImpl->mArrivals.at(idx).getWaveformIdentifier().getStation() + "."
+                                  << pImpl->mArrivals.at(idx).getPhase() << std::endl;
+                    }
+                    std::cout << "--------------" << std::endl;
+*/
+                    arrivalSets.insert(std::move(arrivalSet));
+                }
+            }
+        }
+        pImpl->mFeasibleArrivalSets = std::move(arrivalSets);
     }
 }
 
@@ -474,37 +681,121 @@ IMigrator::getKnownSearchLocation(size_t index) const
 
 /// TODO: Introduce travel time database
 /// Evaluate at the known locations
-std::vector<double> IMigrator::evaluateAtKnownLocations() const
+std::vector<std::pair<double, double>> IMigrator::evaluateAtKnownLocations() const
 {
     auto nLocations = static_cast<int> (pImpl->mKnownLocations.size());
-    std::vector<double> values(nLocations, 0.0);
-    for (int i = 0; i < nLocations; ++i)
+    std::vector<std::pair<double, double>> values(nLocations, std::pair {0.0, 0.0});
+    if (getSignalType() == IMigrator::SignalType::DoubleDifference)
     {
-        if (pImpl->mKnownLocations[i])
+        for (int i = 0; i < nLocations; ++i) 
         {
-            try
+            if (pImpl->mKnownLocations[i])
+            {
+                constexpr double time{0}; // Doesn't matter
+                try
+                {
+                    auto x = pImpl->mKnownLocations[i]->x();
+                    auto y = pImpl->mKnownLocations[i]->y();
+                    auto z = pImpl->mKnownLocations[i]->z();
+                    constexpr double time{0};
+                    double value = evaluate(x, y, z, time);
+                    values[i] = std::pair{time, value};
+                }
+                catch (const std::exception &e)
+                {    
+                    pImpl->mLogger->warn("Failed to evaluate migration for "
+                                        +       std::to_string(i)
+                                        + ".  Failed with: "
+                                        + std::string {e.what()});
+                   values[i] = std::pair{0, 0}; // Contribute nothing
+                } 
+            } // End check on locations exists
+        } // Loop on locations
+    }
+    else
+    {
+        ULocator::Optimizers::OriginTime originTimeCalculator;
+        originTimeCalculator.setNorm(ULocator::Optimizers::IOptimizer::Norm::L1, 1);
+        for (int i = 0; i < nLocations; ++i)
+        {
+            if (pImpl->mKnownLocations[i])
             {
                 auto x = pImpl->mKnownLocations[i]->x();
                 auto y = pImpl->mKnownLocations[i]->y();
                 auto z = pImpl->mKnownLocations[i]->z();
-                values[i] = evaluate(x, y, z);
+                // Evaluate
+                std::vector<double> uniqueTravelTimes;
+                constexpr double originTime{0};
+                constexpr bool applyCorrection{true};
+                try
+                {
+                    pImpl->mTravelTimeCalculatorMap->evaluate(
+                        pImpl->mUniqueStationPhases,
+                        originTime,
+                        x, y, z,
+                        &uniqueTravelTimes,
+                        applyCorrection);
+                }
+                catch (const std::exception &e)
+                {
+                    pImpl->mLogger->warn("Failed to compute travel time for location "
+                                        +       std::to_string(i)
+                                        + ".  Failed with: "
+                                        + std::string {e.what()});
+                    values[i] = std::pair{0, 0}; // Contribute nothing
+                    continue;
+                }
+                // Solve for the optimal origin time in each feasible set
+                double bestValue{0};
+                for (const auto &feasibleArrivalSet :
+                     pImpl->mFeasibleArrivalSets)
+                {
+                    auto nArrivals = static_cast<int> (feasibleArrivalSet.size());
+                    std::vector<double> observations(nArrivals, 0);
+                    std::vector<double> estimates(nArrivals, 0);
+                    std::vector<double> weights(nArrivals, 0);
+                    size_t index{0}; 
+                    for (const auto &iArrival : feasibleArrivalSet)
+                    {
+                        // Get the arrival time
+                        auto uniqueStationPhaseIndex
+                            = pImpl->mArrivalToUniqueStationPhaseMap[iArrival];
+                        estimates[index] = uniqueTravelTimes[uniqueStationPhaseIndex];
+                        observations[index] = pImpl->mObservations[iArrival];
+                        weights[index] = 1./pImpl->mStandardDeviations[iArrival];
+                        index = index + 1;
+                    }
+                    try
+                    {
+                        originTimeCalculator.setArrivalTimes(observations,
+                                                             weights);
+                        originTimeCalculator.setTravelTimes(estimates);
+                        originTimeCalculator.optimize();
+                        auto originTimeForSet = originTimeCalculator.getTime();
+                        auto valueForSet = evaluate(x, y, z, originTimeForSet);
+                        if (valueForSet > bestValue)
+                        {
+                            bestValue = valueForSet;
+                            values[i] = std::pair{originTimeForSet, valueForSet};
+                        }
+                    }
+                    catch (const std::exception &e)
+                    {
+                        pImpl->mLogger->warn("Failed to evaluate migration for "
+                                            +       std::to_string(i)
+                                            + ".  Failed with: "
+                                            + std::string {e.what()});
+                    }
+                } // Loop on candidate arrivals
             }
-            catch (const std::exception &e)
-            {
-                pImpl->mLogger->warn("Failed to evaluate migration for "
-                                    +       std::to_string(i)
-                                    + ".  Failed with: "
-                                    + std::string {e.what()});
-               values[i] = 0; // Contribute nothing
-            }
-        }
-    }
+        } // Loop on locations
+    } // End check on double difference / absolute
     return values;
 }
 
 /// Evaluate at a given point and depth
 double IMigrator::evaluate(
-    const double x, const double y, const double z) const
+    const double x, const double y, const double z, double time) const
 {
     if (!haveArrivals()){throw std::runtime_error("Arrivals not set");}
     if (!haveTravelTimeCalculatorMap())
@@ -523,8 +814,9 @@ double IMigrator::evaluate(
     }
     auto pickSignal = getPickSignalToMigrate();
     std::vector<double> uniqueTravelTimes;
-    constexpr double originTime{0};
+    double originTime{0};
     constexpr bool applyCorrection{true};
+    if (getSignalType() == IMigrator::SignalType::Absolute){originTime = time;}
     pImpl->mTravelTimeCalculatorMap->evaluate(pImpl->mUniqueStationPhases,
                                               originTime,
                                               x, y, z,
@@ -534,8 +826,14 @@ double IMigrator::evaluate(
         = pImpl->mTravelTimeCalculatorMap->computeDistance(
              pImpl->mUniqueStationPhases, x, y);
     double stack{0};
+    std::set<int> bestSet;
     if (getSignalType() == IMigrator::SignalType::DoubleDifference)
     {
+        if (pickSignal != IMigrator::PickSignal::Boxcar &&
+            pickSignal != IMigrator::PickSignal::Gaussian)
+        {
+            throw std::runtime_error("Unhandled pick signal for double difference");
+        }
 #ifndef NDEBUG
         assert(pImpl->mDifferentialTablePairs.size() ==
                pImpl->mDifferentialArrivalPairs.size());
@@ -639,7 +937,54 @@ double IMigrator::evaluate(
     }
     else
     {
-        throw std::runtime_error("Absolute not yet handled");
+        // For each feasible arrival set tabulate 
+        double normalization = ::truncatedGaussianNormalization(
+            pImpl->mMaximumStandardDeviation);
+        double bestStackContribution{-1};
+        std::vector<bool> contributed;
+        if (saveContributingArrivals)
+        {
+            contributed.resize(pImpl->mObservations.size());
+        }
+        for (const auto &feasibleArrivalSet : pImpl->mFeasibleArrivalSets)
+        {
+            if (saveContributingArrivals)
+            {
+                std::fill(contributed.begin(), contributed.end(), false);
+            }
+            double stackContribution{0};
+            for (const auto iArrival : feasibleArrivalSet)
+            {
+                auto uniqueStationPhaseIndex
+                    = pImpl->mArrivalToUniqueStationPhaseMap[iArrival];
+                double estimate = uniqueTravelTimes[uniqueStationPhaseIndex];
+                double observation = pImpl->mObservations[iArrival];
+                double standardDeviation = pImpl->mStandardDeviations[iArrival];
+                constexpr bool acceptAnyway = true;
+                double likelihood = ::truncatedGaussianContribution(observation,
+                                                       estimate,
+                                                       standardDeviation,
+                                                       normalization,
+                                                       pImpl->mMaximumStandardDeviation,
+                                                       acceptAnyway);
+                if (saveContributingArrivals && likelihood > 0)
+                {
+                    contributed.at(iArrival) = true;
+                }
+                stackContribution = stackContribution + likelihood;
+            }
+            if (stackContribution > bestStackContribution)
+            {
+                if (saveContributingArrivals)
+                {
+                    bestSet = feasibleArrivalSet;
+                    if (saveContributingArrivals){arrivalContributed = contributed;}
+                }
+                bestStackContribution = stackContribution;
+            }
+        }
+        stack = 0;
+        if (bestStackContribution >-1){stack = bestStackContribution;}
     }
     // If we are saving the contributing arrivals then note the travel times
     if (saveContributingArrivals)
@@ -686,6 +1031,35 @@ double IMigrator::evaluate(
                 }
             }
         }
+        else
+        {
+            double normalization = ::truncatedGaussianNormalization(
+                pImpl->mMaximumStandardDeviation);
+            for (const auto iArrival : bestSet)
+            {
+                auto uniqueStationPhaseIndex
+                    = pImpl->mArrivalToUniqueStationPhaseMap[iArrival];
+                double estimate = uniqueTravelTimes[uniqueStationPhaseIndex];
+                double observation = pImpl->mObservations[iArrival];
+                double standardDeviation = pImpl->mStandardDeviations[iArrival];
+                constexpr bool acceptAnyway = false;
+                auto likelihood = ::truncatedGaussianContribution(observation,
+                                                     estimate,
+                                                     standardDeviation,
+                                                     normalization,
+                                                     pImpl->mMaximumStandardDeviation,
+                                                     acceptAnyway);
+
+                if (likelihood > 0)
+                {
+//std::cout << "keep it! " << likelihood << std::endl;
+                    auto arrival = pImpl->mArrivals[iArrival];
+                    arrival.setTravelTime(estimate - originTime);
+                    pImpl->mContributingArrivals.push_back(
+                        std::pair {std::move(arrival), likelihood});
+                }
+            }
+        }
         // Sort by arrival time
         std::sort(pImpl->mContributingArrivals.begin(),
                   pImpl->mContributingArrivals.end(),
@@ -698,6 +1072,7 @@ double IMigrator::evaluate(
     }
     return stack;
 }
+
 
 std::vector<std::pair<Arrival, double>> 
     IMigrator::getContributingArrivals() const

@@ -47,6 +47,8 @@ public:
     /// @result The optimal (latitude, longitude, depth) where the
     ///         migration image is maximal.
     [[nodiscard]] virtual std::tuple<double, double, double> getOptimalHypocenter() const = 0;
+    /// @result The optimal origin time where the standard migration is maximal.
+    [[nodiscard]] virtual double getOptimalOriginTime() const = 0;
     /// @result The arrivals that contributed to the optimum.
     [[nodiscard]] virtual std::vector<std::pair<Arrival, double>> getContributingArrivals() const = 0;
 

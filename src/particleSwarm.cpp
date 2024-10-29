@@ -1,3 +1,5 @@
+#include <iostream>
+#include <iomanip>
 #include <cmath>
 #include <vector>
 #include <limits>
@@ -15,6 +17,86 @@ using namespace MAssociate;
 
 namespace
 {
+struct FixedDepthAbsoluteTimeMigration
+{
+    pagmo::vector_double fitness(const pagmo::vector_double &dv) const
+    {   
+        double fitness = std::numeric_limits<double>::max();
+#ifndef NDEBUG
+        assert(dv.size() == static_cast<int> (mParameters));
+#endif
+        try
+        {
+            // Make this negative b/c the migration operator looks to maximize
+            // but Pagmo wants to minimize - i.e., the `best' image point is
+            // the most negative image point
+            double time = mReductionTime + dv.at(2);
+            fitness =-mMigrationFunction(dv.at(0), dv.at(1), time);
+        }
+        catch (const std::exception &e) 
+        {
+            auto errorMessage = "Problem for source at fixed depth (x,y,t) = ("
+                              + std::to_string(dv.at(0)) + "," 
+                              + std::to_string(dv.at(1)) + ","
+                              + std::to_string(dv.at(2)) 
+                              + ").  Failed with: "  + std::string {e.what()};
+            if (mLogger)
+            {
+                mLogger->warn(errorMessage);
+            }
+        }
+        return pagmo::vector_double {fitness};
+    }
+    /// @result The number of equality constraints
+    pagmo::vector_double::size_type get_eic() const
+    {
+        return 0;
+    }
+    /// @result The number of inequality constraints.
+    pagmo::vector_double::size_type get_nic() const
+    {
+        return 0;
+    }
+    /// @result The hard bounds on the search region.
+    std::pair<pagmo::vector_double, pagmo::vector_double> get_bounds() const
+    {
+        return std::pair {mLowerBounds, mUpperBounds};
+    }
+    /// @brief Sets the search boundaries.
+    void setSearchBoundaries(
+        const std::vector<double> &lowerBoundaries,
+        const std::vector<double> &upperBoundaries)
+    {
+        if (static_cast<int> (lowerBoundaries.size()) != mParameters)
+        {
+            throw std::invalid_argument("lowerBoundaries size != 3");
+        }
+        if (lowerBoundaries.size() != upperBoundaries.size())
+        {
+            throw std::invalid_argument("upperBoundaries size != 3");
+        }
+        for (int i = 0; i < static_cast<int> (lowerBoundaries.size()); ++i)
+        {
+            if (lowerBoundaries[i] >= upperBoundaries[i])
+            {
+                throw std::invalid_argument("l[i] >= u[i]");
+            }
+        }
+        mLowerBounds = lowerBoundaries;
+        mUpperBounds = upperBoundaries;
+    }
+    MAssociate::IMigrator *mMigrator{nullptr};
+    std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
+    std::function< double(const double, const double, const double) >
+        mMigrationFunction;
+    pagmo::vector_double mLowerBounds;
+    pagmo::vector_double mUpperBounds;
+    double mReductionTime{0};
+    int mParameters{3};
+};
+
+
+
 struct FixedDepthDoubleDifferenceMigration
 {
     pagmo::vector_double fitness(const pagmo::vector_double &dv) const
@@ -28,7 +110,8 @@ struct FixedDepthDoubleDifferenceMigration
             // Make this negative b/c the migration operator looks to maximize
             // but Pagmo wants to minimize - i.e., the `best' image point is
             // the most negative image point
-            fitness =-mMigrationFunction(dv.at(0), dv.at(1));
+            constexpr double time{0};
+            fitness =-mMigrationFunction(dv.at(0), dv.at(1), time);
         }
         catch (const std::exception &e) 
         {
@@ -84,13 +167,92 @@ struct FixedDepthDoubleDifferenceMigration
 
     MAssociate::IMigrator *mMigrator{nullptr}; 
     std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
-    std::function< double(const double, const double) >
+    std::function< double(const double, const double, const double) >
         mMigrationFunction;
     pagmo::vector_double mLowerBounds;
     pagmo::vector_double mUpperBounds;
     int mParameters{2}; 
 };
 
+struct FreeDepthAbsoluteTimeMigration
+{
+    pagmo::vector_double fitness(const pagmo::vector_double &dv) const
+    {
+        double fitness = std::numeric_limits<double>::max();
+#ifndef NDEBUG
+        assert(dv.size() == static_cast<int> (mParameters));
+#endif
+        try
+        {
+            // Make this negative b/c the migration operator looks to maximize
+            // but Pagmo wants to minimize - i.e., the `best' image point is
+            // the most negative image point
+            const double time = mReductionTime + dv.at(3);
+            fitness =-mMigrationFunction(dv.at(0), dv.at(1), dv.at(2), time);
+        }
+        catch (const std::exception &e)
+        {
+            auto errorMessage = "Problem for source at (x,y,z) = ("
+                              + std::to_string(dv.at(0)) + ","
+                              + std::to_string(dv.at(1)) + ","
+                              + std::to_string(dv.at(2)) + ","
+                              + std::to_string(dv.at(3)) 
+                              + ").  Failed with: "  + std::string {e.what()};
+            if (mLogger)
+            {
+                mLogger->warn(errorMessage);
+            }
+        }
+        return pagmo::vector_double {fitness};
+    }
+    /// @result The number of equality constraints
+    pagmo::vector_double::size_type get_eic() const
+    {
+        return 0;
+    }
+    /// @result The number of inequality constraints.
+    pagmo::vector_double::size_type get_nic() const
+    {
+        return 0;
+    }
+    /// @result The hard bounds on the search region.
+    std::pair<pagmo::vector_double, pagmo::vector_double> get_bounds() const
+    {
+        return std::pair {mLowerBounds, mUpperBounds};
+    }
+    /// @brief Sets the search boundaries.
+    void setSearchBoundaries(
+        const std::vector<double> &lowerBoundaries,
+        const std::vector<double> &upperBoundaries)
+    {
+        if (static_cast<int> (lowerBoundaries.size()) != mParameters)
+        {
+            throw std::invalid_argument("lowerBoundaries size != 4");
+        }
+        if (lowerBoundaries.size() != upperBoundaries.size())
+        {
+            throw std::invalid_argument("upperBoundaries size != 4");
+        }
+        for (int i = 0; i < static_cast<int> (lowerBoundaries.size()); ++i)
+        {
+            if (lowerBoundaries[i] >= upperBoundaries[i])
+            {
+                throw std::invalid_argument("l[i] >= u[i]");
+            }
+        }
+        mLowerBounds = lowerBoundaries;
+        mUpperBounds = upperBoundaries;
+    }
+
+    MAssociate::IMigrator *mMigrator{nullptr};
+    std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
+    std::function< double(const double, const double, const double, const double) >
+        mMigrationFunction;
+    pagmo::vector_double mLowerBounds;
+    pagmo::vector_double mUpperBounds;
+    double mReductionTime{0};
+    int mParameters{4};
+};
 
 struct FreeDepthDoubleDifferenceMigration
 {
@@ -105,7 +267,8 @@ struct FreeDepthDoubleDifferenceMigration
             // Make this negative b/c the migration operator looks to maximize
             // but Pagmo wants to minimize - i.e., the `best' image point is
             // the most negative image point
-            fitness =-mMigrationFunction(dv.at(0), dv.at(1), dv.at(2));
+            constexpr double time{0};
+            fitness =-mMigrationFunction(dv.at(0), dv.at(1), dv.at(2), time);
         }
         catch (const std::exception &e)
         {
@@ -162,7 +325,7 @@ struct FreeDepthDoubleDifferenceMigration
 
     MAssociate::IMigrator *mMigrator{nullptr}; 
     std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
-    std::function< double(const double, const double, const double) >
+    std::function< double(const double, const double, const double, const double) >
         mMigrationFunction;
     pagmo::vector_double mLowerBounds;
     pagmo::vector_double mUpperBounds;
@@ -182,32 +345,37 @@ public:
             mLogger = std::make_shared<UMPS::Logging::StandardOut> ();
         }
     }
-    [[nodiscard]] double migrateFixedDepth(const double x, const double y) const
+    [[nodiscard]] double migrateFixedDepth(const double x,
+                                           const double y,
+                                           const double time) const
     {
-        return mMigrator->evaluate(x, y, mDepth);
+        return mMigrator->evaluate(x, y, mDepth, time);
     }
     [[nodiscard]] double migrateFreeDepth(const double x,
                                           const double y,
-                                          const double z) const
+                                          const double z,
+                                          const double time) const
     {
-        return mMigrator->evaluate(x, y, z);
+        return mMigrator->evaluate(x, y, z, time);
     }   
-    std::function<double (const double, const double)>
+    std::function<double (const double, const double, const double)>
     mFixedDepthMigrationFunction
     {
         std::bind(&ParticleSwarmImpl::migrateFixedDepth,
                   this,
                   std::placeholders::_1,
-                  std::placeholders::_2)
+                  std::placeholders::_2,
+                  std::placeholders::_3)
     };
-    std::function<double (const double, const double, const double)>
+    std::function<double (const double, const double, const double, const double)>
     mFreeDepthMigrationFunction
     {
         std::bind(&ParticleSwarmImpl::migrateFreeDepth,
                   this,
                   std::placeholders::_1,
                   std::placeholders::_2,
-                  std::placeholders::_3)
+                  std::placeholders::_3,
+                  std::placeholders::_4)
     };  
     std::shared_ptr<UMPS::Logging::ILog> mLogger{nullptr};
     IMigrator *mMigrator{nullptr};
@@ -227,6 +395,7 @@ public:
     double mOptimalMigrationValue{0};
     double mBestLatitude{0};
     double mBestLongitude{0};
+    double mBestOriginTime{0};
     double mBestDepth{0};
     double mDepth{6000};
     int mGenerations{75};
@@ -466,67 +635,152 @@ void ParticleSwarm::optimize()
     }
     auto [x0, x1] = getExtentInX();
     auto [y0, y1] = getExtentInY();
+    double t0 =-60; // TODO
+    double t1 =+60; // TODO 
+    double reductionTime = 0; 
+    if (pImpl->mMigrator->getSignalType() == IMigrator::SignalType::Absolute)
+    {    
+        const auto &arrivalList = pImpl->mMigrator->getArrivalsReference();
+        if (!arrivalList.empty())
+        {
+            reductionTime = arrivalList[0].getTime().count()*1.e-6;
+            for (int i = 1; i < static_cast<int> (arrivalList.size()); ++i) 
+            {
+                reductionTime = std::min(reductionTime,
+                                    arrivalList[i].getTime().count()*1.e-6);
+            }
+        }
+    }    
+
     auto evaluationDepth = getDepth();
     double xOptimum{0};
     double yOptimum{0}; 
     double zOptimum{0};
+    double tOptimum{0};
     double fOptimum{0};
     // Make sure the migrator will not save the contribution history
     pImpl->mMigrator->disableSaveArrivalContributionList();
     if (!searchDepth())
     {
-        // Instantiate the fitness class 
-        ::FixedDepthDoubleDifferenceMigration fitness;
-        fitness.mMigrationFunction = pImpl->mFixedDepthMigrationFunction;
-        fitness.mLogger = pImpl->mLogger;
-        // Set bounds 
-        fitness.setSearchBoundaries(std::vector<double> {x0, y0},
-                                    std::vector<double> {x1, y1} );
-        // Instantiate the problem
-        pagmo::problem problem{std::move(fitness)};
-        // Instantiate the particle swarm algorithm
-        pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
-        // Instantiate the population
-        auto populationSize = static_cast<size_t> (getNumberOfParticles());
-        pagmo::population population{problem, populationSize};
-        // Evolve the population
-        pImpl->mLogger->debug("Beginning PSO for 2D");
-        auto newPopulation = algorithm.evolve(population);
-        pImpl->mLogger->debug("PSO finished!");
-        // Pick a winner and extract the hypocenter
-        auto optimumLocation = newPopulation.champion_x();
-        xOptimum = optimumLocation.at(0);
-        yOptimum = optimumLocation.at(1);
-        zOptimum = evaluationDepth;
-        fOptimum = newPopulation.champion_f()[0]; 
+        if (pImpl->mMigrator->getSignalType() ==
+            IMigrator::SignalType::DoubleDifference)
+        {
+            // Instantiate the fitness class 
+            ::FixedDepthDoubleDifferenceMigration fitness;
+            fitness.mMigrationFunction = pImpl->mFixedDepthMigrationFunction;
+            fitness.mLogger = pImpl->mLogger;
+            // Set bounds 
+            fitness.setSearchBoundaries(std::vector<double> {x0, y0},
+                                        std::vector<double> {x1, y1} );
+            // Instantiate the problem
+            pagmo::problem problem{std::move(fitness)};
+            // Instantiate the particle swarm algorithm
+            pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
+            // Instantiate the population
+            auto populationSize = static_cast<size_t> (getNumberOfParticles());
+            pagmo::population population{problem, populationSize};
+            // Evolve the population
+            pImpl->mLogger->debug("Beginning PSO for 2D double difference");
+            auto newPopulation = algorithm.evolve(population);
+            pImpl->mLogger->debug("PSO finished!");
+            // Pick a winner and extract the hypocenter
+            auto optimumLocation = newPopulation.champion_x();
+            xOptimum = optimumLocation.at(0);
+            yOptimum = optimumLocation.at(1);
+            zOptimum = evaluationDepth;
+            fOptimum = newPopulation.champion_f()[0]; 
+        }
+        else
+        {
+            // Instantiate the fitness class 
+            ::FixedDepthAbsoluteTimeMigration fitness;
+            fitness.mMigrationFunction = pImpl->mFixedDepthMigrationFunction;
+            fitness.mReductionTime = reductionTime;
+            fitness.mLogger = pImpl->mLogger;
+            // Set bounds 
+            fitness.setSearchBoundaries(std::vector<double> {x0, y0, t0},
+                                        std::vector<double> {x1, y1, t1} );
+            // Instantiate the problem
+            pagmo::problem problem{std::move(fitness)};
+            // Instantiate the particle swarm algorithm
+            pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
+            // Instantiate the population
+            auto populationSize = static_cast<size_t> (getNumberOfParticles());
+            pagmo::population population{problem, populationSize};
+            // Evolve the population
+            pImpl->mLogger->debug("Beginning PSO for standard 2D and time");
+            auto newPopulation = algorithm.evolve(population);
+            pImpl->mLogger->debug("PSO finished!");
+            // Pick a winner and extract the hypocenter
+            auto optimumLocation = newPopulation.champion_x();
+            xOptimum = optimumLocation.at(0);
+            yOptimum = optimumLocation.at(1);
+            tOptimum = optimumLocation.at(2);
+            zOptimum = evaluationDepth;
+            fOptimum = newPopulation.champion_f()[0]; 
+        }
     }
     else
     {
-        auto [z0, z1] = getExtentInZ();
-        // Instantiate the fitness class 
-        ::FreeDepthDoubleDifferenceMigration fitness;
-        fitness.mMigrationFunction = pImpl->mFreeDepthMigrationFunction;
-        fitness.mLogger = pImpl->mLogger;
-        // Set bounds
-        fitness.setSearchBoundaries(std::vector<double> {x0, y0, z0},
-                                    std::vector<double> {x1, y1, z1} );
-        // Instantiate the problem
-        pagmo::problem problem{std::move(fitness)};
-        // Instantiate the particle swarm algorithm
-        pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
-        // Instantiate the population
-        auto populationSize = static_cast<size_t> (getNumberOfParticles());
-        pagmo::population population{problem, populationSize};
-        // Evolve the population
-        pImpl->mLogger->debug("Beginning PSO for 3D");
-        auto newPopulation = algorithm.evolve(population);
-        pImpl->mLogger->debug("PSO finished!");
-        // Pick a winner and extract the hypocenter
-        auto optimumLocation = newPopulation.champion_x();
-        xOptimum = optimumLocation.at(0);
-        yOptimum = optimumLocation.at(1);
-        zOptimum = optimumLocation.at(2);
-        fOptimum = newPopulation.champion_f()[0];
+        if (pImpl->mMigrator->getSignalType() ==
+            IMigrator::SignalType::DoubleDifference)
+        {
+            auto [z0, z1] = getExtentInZ();
+            // Instantiate the fitness class 
+            ::FreeDepthDoubleDifferenceMigration fitness;
+            fitness.mMigrationFunction = pImpl->mFreeDepthMigrationFunction;
+            fitness.mLogger = pImpl->mLogger;
+            // Set bounds
+            fitness.setSearchBoundaries(std::vector<double> {x0, y0, z0},
+                                        std::vector<double> {x1, y1, z1} );
+            // Instantiate the problem
+            pagmo::problem problem{std::move(fitness)};
+            // Instantiate the particle swarm algorithm
+            pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
+            // Instantiate the population
+            auto populationSize = static_cast<size_t> (getNumberOfParticles());
+            pagmo::population population{problem, populationSize};
+            // Evolve the population
+            pImpl->mLogger->debug("Beginning PSO for 3D double difference");
+            auto newPopulation = algorithm.evolve(population);
+            pImpl->mLogger->debug("PSO finished!");
+            // Pick a winner and extract the hypocenter
+            auto optimumLocation = newPopulation.champion_x();
+            xOptimum = optimumLocation.at(0);
+            yOptimum = optimumLocation.at(1);
+            zOptimum = optimumLocation.at(2);
+            fOptimum = newPopulation.champion_f()[0];
+        }
+        else
+        {
+            auto [z0, z1] = getExtentInZ();
+            // Instantiate the fitness class 
+            ::FreeDepthAbsoluteTimeMigration fitness;
+            fitness.mMigrationFunction = pImpl->mFreeDepthMigrationFunction;
+            fitness.mReductionTime = reductionTime;
+            fitness.mLogger = pImpl->mLogger;
+            // Set bounds
+            fitness.setSearchBoundaries(std::vector<double> {x0, y0, z0, t0},
+                                        std::vector<double> {x1, y1, z1, t1} );
+            // Instantiate the problem
+            pagmo::problem problem{std::move(fitness)};
+            // Instantiate the particle swarm algorithm
+            pagmo::algorithm algorithm{pagmo::pso(getNumberOfGenerations())};
+            // Instantiate the population
+            auto populationSize = static_cast<size_t> (getNumberOfParticles());
+            pagmo::population population{problem, populationSize};
+            // Evolve the population
+            pImpl->mLogger->debug("Beginning PSO for standard 3D and time");
+            auto newPopulation = algorithm.evolve(population);
+            pImpl->mLogger->debug("PSO finished!");
+            // Pick a winner and extract the hypocenter
+            auto optimumLocation = newPopulation.champion_x();
+            xOptimum = optimumLocation.at(0);
+            yOptimum = optimumLocation.at(1);
+            zOptimum = optimumLocation.at(2);
+            tOptimum = optimumLocation.at(3);
+            fOptimum = newPopulation.champion_f()[0];
+        }
     }
 
     // Search through the known locations
@@ -536,7 +790,11 @@ void ParticleSwarm::optimize()
     {
         auto bestKnownCandidateEventScore
             = std::max_element(knownCandidateEventsScores.begin(),
-                               knownCandidateEventsScores.end());
+                               knownCandidateEventsScores.end(),
+                               [](const auto &lhs, const auto &rhs)
+                               {
+                                   return lhs.second < rhs.second;
+                               });
         auto index
             = std::distance(knownCandidateEventsScores.begin(),
                             bestKnownCandidateEventScore);
@@ -545,15 +803,17 @@ void ParticleSwarm::optimize()
         //std::cout << bestKnownCandidateEventOptimum << " " << fOptimum << std::endl;
         // Best point is most negative.  So we want to be even more negative
         // to be better
-        bestKnownCandidateEventOptimum =-bestKnownCandidateEventOptimum;
-        if (bestKnownCandidateEventOptimum < fOptimum)
+        bestKnownCandidateEventOptimum.second
+            =-bestKnownCandidateEventOptimum.second;
+        if (bestKnownCandidateEventOptimum.second < fOptimum)
         {
-            pImpl->mLogger->info("Predetermined event location beat PSO");
+            pImpl->mLogger->debug("Predetermined event location beat PSO");
             auto knownLocation = pImpl->mMigrator->getKnownSearchLocation(index);
             xOptimum = knownLocation->x();
             yOptimum = knownLocation->y();
             zOptimum = knownLocation->z();
-            fOptimum = bestKnownCandidateEventOptimum;
+            tOptimum = bestKnownCandidateEventOptimum.first;
+            fOptimum = bestKnownCandidateEventOptimum.second;
         }
     }
     
@@ -583,11 +843,16 @@ void ParticleSwarm::optimize()
     pImpl->mBestLatitude = latitude;
     pImpl->mBestLongitude = longitude;
     pImpl->mBestDepth = zOptimum;
+    pImpl->mBestOriginTime = reductionTime + tOptimum;
+//std::cout << xOptimum << " " << yOptimum << std::endl;
+//std::cout << std::setprecision(14) << "PSO Optimum: " << latitude << " " << longitude << " " << pImpl->mBestDepth << " " << pImpl->mBestOriginTime << " " << std::endl;
+
     try
     {
         pImpl->mMigrator->enableSaveArrivalContributionList();
+        const double time = reductionTime + tOptimum;
         pImpl->mOptimalMigrationValue
-            = pImpl->mMigrator->evaluate(xOptimum, yOptimum, zOptimum);
+            = pImpl->mMigrator->evaluate(xOptimum, yOptimum, zOptimum, time);
 //std::cout << pImpl->mOptimalMigrationValue << std::endl;
         pImpl->mContributingArrivals
             = pImpl->mMigrator->getContributingArrivals();
@@ -679,6 +944,16 @@ std::tuple<double, double, double> ParticleSwarm::getOptimalHypocenter() const
     return std::tuple {pImpl->mBestLatitude,
                        pImpl->mBestLongitude,
                        pImpl->mBestDepth};
+}
+
+/// Get the optimal origin time
+double ParticleSwarm::getOptimalOriginTime() const 
+{
+    if (!haveOptimum())
+    {
+        throw std::runtime_error("Optimal location not computed");
+    }
+    return pImpl->mBestOriginTime;
 }
 
 /// Optimal value
