@@ -3,6 +3,7 @@ project(MAssociate VERSION 1.0.0 LANGUAGES CXX)
 enable_testing()
 
 option(WRAP_PYTHON "Compile the Python bindings" OFF)
+option(USE_UMPS "Compile with the UMPS logging library" ON)
 #cmake -DBUILD_SHARED_LIBS=YES /path/to/source
 set(BUILD_SHARED_LIBS YES)
 
@@ -72,6 +73,9 @@ endif()
 if (${NLopt_FOUND})
    add_compile_definitions(USE_NLOPT)
    set(SRC ${SRC} src/dividedRectangles.cpp)
+endif()
+if (NOT ${USE_UMPS})
+   set(SRC ${SRC} src/logging/standardOut.cpp)
 endif()
 
 add_library(massociate ${SRC})
