@@ -3,7 +3,11 @@
 #include <memory>
 #include <chrono>
 #include <vector>
-#include <umps/logging/log.hpp>
+//#include <umps/logging/log.hpp>
+namespace UMPS::Logging
+{
+ class ILog;
+}
 namespace ULocator
 {
  class Station;
