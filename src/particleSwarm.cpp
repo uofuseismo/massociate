@@ -7,7 +7,11 @@
 #include <pagmo/pagmo.hpp>
 #include <uLocator/position/geographicRegion.hpp>
 #include <uLocator/optimizers/originTime.hpp>
+#ifdef WITH_LOCAL_UMPS_LOGGING
+#include "logging/standardOut.hpp"
+#else
 #include <umps/logging/standardOut.hpp>
+#endif
 #include "massociate/particleSwarm.hpp"
 #include "massociate/migrator.hpp"
 #include "massociate/arrival.hpp"
