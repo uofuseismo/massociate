@@ -2,7 +2,10 @@
 #define MASSOCIATE_DIVIDED_RECTANGLES_HPP
 #include <memory>
 #include <massociate/optimizer.hpp>
-#include <umps/logging/log.hpp>
+namespace UMPS::Logging
+{
+ class ILog;
+}
 namespace MAssociate
 {
  class IMigrator;
