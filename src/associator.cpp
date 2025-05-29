@@ -5,7 +5,11 @@
 #include <cmath>
 #include <map>
 #include <set>
+#ifdef WITH_LOCAL_UMPS_LOGGING
+#include "logging/standardOut.hpp"
+#else
 #include <umps/logging/standardOut.hpp>
+#endif
 #include <uLocator/optimizers/originTime.hpp>
 //#include <uLocator/station.hpp>
 #include "massociate/associator.hpp"

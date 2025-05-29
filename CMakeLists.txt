@@ -80,7 +80,7 @@ endif()
 
 add_library(massociate ${SRC})
 if (NOT ${USE_UMPS})
-   target_compile_definitions(massociate PUBLIC WITH_UMPS)
+   target_compile_definitions(massociate PUBLIC WITH_LOCAL_UMPS_LOGGING)
 endif()
 target_link_libraries(massociate
                       PRIVATE ${MKL_LIBRARY} ${TBB_LIBRARY} ${UMPS_LIBRARY}
