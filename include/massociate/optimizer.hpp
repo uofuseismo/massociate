@@ -3,7 +3,6 @@
 #include <vector>
 #include <memory>
 #include <tuple>
-#include <umps/logging/log.hpp>
 namespace MAssociate
 {
  class Arrival;
