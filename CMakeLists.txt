@@ -79,6 +79,9 @@ if (NOT ${USE_UMPS})
 endif()
 
 add_library(massociate ${SRC})
+if (NOT ${USE_UMPS})
+   target_compile_definitions(massociate WITH_UMPS)
+endif()
 target_link_libraries(massociate
                       PRIVATE ${MKL_LIBRARY} ${TBB_LIBRARY} ${UMPS_LIBRARY}
                               ${uLocator_LIBRARY} 
